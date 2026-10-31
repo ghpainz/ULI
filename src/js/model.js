@@ -1,0 +1,335 @@
+// Proje veri modeli: fabrikalar ve sorgular
+import { uid } from './util.js';
+import { effectDef } from './effectsDef.js';
+
+export const PROJECT_VERSION = 1;
+
+export function createProject(name = 'Untitled') {
+  return {
+    app: 'ULIPremiere',
+    version: PROJECT_VERSION,
+    name,
+    media: {},
+    sequences: {},
+    bins: { root: { id: 'root', name: '', parent: null } },
+    activeSequenceId: null,
+    openSequenceIds: [],
+    createdAt: Date.now(),
+  };
+}
+
+export const SEQUENCE_PRESETS = [
+  { key: '1080p2398', name: 'HD 1080p 23.976', width: 1920, height: 1080, fps: 23.976 },
+  { key: '1080p24', name: 'HD 1080p 24', width: 1920, height: 1080, fps: 24 },
+  { key: '1080p25', name: 'HD 1080p 25', width: 1920, height: 1080, fps: 25 },
+  { key: '1080p2997', name: 'HD 1080p 29.97', width: 1920, height: 1080, fps: 29.97 },
+  { key: '1080p30', name: 'HD 1080p 30', width: 1920, height: 1080, fps: 30 },
+  { key: '1080p50', name: 'HD 1080p 50', width: 1920, height: 1080, fps: 50 },
+  { key: '1080p5994', name: 'HD 1080p 59.94', width: 1920, height: 1080, fps: 59.94 },
+  { key: '1080p60', name: 'HD 1080p 60', width: 1920, height: 1080, fps: 60 },
+  { key: '720p30', name: 'HD 720p 30', width: 1280, height: 720, fps: 30 },
+  { key: 'uhd24', name: 'UHD 4K 24', width: 3840, height: 2160, fps: 24 },
+  { key: 'uhd25', name: 'UHD 4K 25', width: 3840, height: 2160, fps: 25 },
+  { key: 'uhd30', name: 'UHD 4K 30', width: 3840, height: 2160, fps: 30 },
+  { key: 'uhd60', name: 'UHD 4K 60', width: 3840, height: 2160, fps: 60 },
+  { key: 'vert30', name: 'Vertical 1080x1920 30 (Reels/TikTok)', width: 1080, height: 1920, fps: 30 },
+  { key: 'vert60', name: 'Vertical 1080x1920 60', width: 1080, height: 1920, fps: 60 },
+  { key: 'sq30', name: 'Square 1080x1080 30', width: 1080, height: 1080, fps: 30 },
+  { key: 'p45', name: '4:5 1080x1350 30 (Instagram)', width: 1080, height: 1350, fps: 30 },
+];
+
+export function createTrack(type, index) {
+  return {
+    id: uid('trk'),
+    name: (type === 'video' ? 'V' : 'A') + (index + 1),
+    locked: false,
+    hidden: false,
+    muted: false,
+    solo: false,
+    volume: 0,
+    pan: 0,
+    targeted: index === 0,
+    height: type === 'video' ? 46 : 46,
+  };
+}
+
+export function createSequence(opts = {}) {
+  const s = {
+    id: uid('seq'),
+    name: opts.name || 'Sequence 01',
+    binId: opts.binId || 'root',
+    width: opts.width || 1920,
+    height: opts.height || 1080,
+    fps: opts.fps || 30,
+    sampleRate: 48000,
+    tracks: { video: [], audio: [] },
+    clips: {},
+    markers: [],
+    inFrame: null,
+    outFrame: null,
+    playhead: 0,
+    masterVolume: 0,
+    createdAt: Date.now(),
+  };
+  const nv = opts.videoTracks ?? 3, na = opts.audioTracks ?? 3;
+  for (let i = 0; i < nv; i++) s.tracks.video.push(createTrack('video', i));
+  for (let i = 0; i < na; i++) s.tracks.audio.push(createTrack('audio', i));
+  return s;
+}
+
+export function param(v) {
+  return { v, kf: null };
+}
+
+export function defaultVideoProps(seq, media) {
+  const sw = media?.width || seq.width, sh = media?.height || seq.height;
+  return {
+    position: param([seq.width / 2, seq.height / 2]),
+    scale: param(100),
+    scaleWidth: param(100),
+    uniformScale: true,
+    rotation: param(0),
+    anchor: param([sw / 2, sh / 2]),
+    opacity: param(100),
+    blendMode: 'normal',
+  };
+}
+
+export function defaultAudioProps() {
+  return {
+    volume: param(0),
+    pan: param(0),
+  };
+}
+
+export function defaultTextData() {
+  return {
+    text: 'Yeni Metin',
+    font: 'Segoe UI',
+    size: 96,
+    bold: true,
+    italic: false,
+    align: 'center',
+    color: '#ffffff',
+    strokeWidth: 0,
+    strokeColor: '#000000',
+    shadow: true,
+    shadowColor: '#000000',
+    shadowBlur: 12,
+    shadowDist: 4,
+    bgEnabled: false,
+    bgColor: '#000000',
+    bgOpacity: 60,
+    bgPadding: 20,
+    lineHeight: 1.15,
+    tracking: 0,
+  };
+}
+
+export function createClip(seq, opts) {
+  const c = {
+    id: uid('clp'),
+    kind: opts.kind || 'media',
+    mediaId: opts.mediaId || null,
+    type: opts.type, // 'video' | 'audio'
+    track: opts.track ?? 0,
+    start: Math.round(opts.start ?? 0),
+    duration: Math.max(1, Math.round(opts.duration ?? 1)),
+    inPoint: opts.inPoint ?? 0,
+    speed: opts.speed ?? 1,
+    reverse: false,
+    enabled: true,
+    linkId: opts.linkId || null,
+    name: opts.name || 'Clip',
+    label: opts.label || null,
+    props: opts.type === 'video' ? defaultVideoProps(seq, opts.media) : defaultAudioProps(),
+    effects: [],
+    transIn: null,
+    transOut: null,
+  };
+  if (c.kind === 'text') c.text = { ...defaultTextData(), ...(opts.text || {}) };
+  if (c.kind === 'color') c.color = opts.color || '#000000';
+  if (c.kind === 'sequence') c.seqId = opts.seqId;
+  return c;
+}
+
+export function createEffect(type) {
+  const def = effectDef(type);
+  if (!def) throw new Error('Unknown effect ' + type);
+  const params = {};
+  for (const p of def.params) {
+    if (p.animatable === false) params[p.key] = { v: structuredClone(p.default), kf: null, static: true };
+    else params[p.key] = param(structuredClone(p.default));
+  }
+  return { id: uid('fx'), type, enabled: true, params };
+}
+
+// Maske: path düz dizi — elips: [x, y, w, h] (kaynak pikseli, sol üst), çokgen: [x0, y0, x1, y1, ...]
+export function createMask(type, sw, sh, index = 0) {
+  let path;
+  if (type === 'ellipse') path = [sw * 0.3, sh * 0.3, sw * 0.4, sh * 0.4];
+  else if (type === 'polygon') path = [sw * 0.3, sh * 0.3, sw * 0.7, sh * 0.3, sw * 0.7, sh * 0.7, sw * 0.3, sh * 0.7];
+  else path = []; // kalem: noktalar monitörde eklenir
+  return {
+    id: uid('msk'),
+    name: 'Mask (' + (index + 1) + ')',
+    type: type === 'pen' ? 'bezier' : type,
+    path: param(path.map((v) => Math.round(v * 10) / 10)),
+    feather: param(10),
+    opacity: param(100),
+    expansion: param(0),
+    inverted: false,
+    mode: 'add',
+    enabled: true,
+  };
+}
+
+export const MASK_PARAM_KEYS = ['path', 'feather', 'opacity', 'expansion'];
+
+// ---- Sorgular ----
+
+export function clipEnd(c) {
+  return c.start + c.duration;
+}
+
+export function clipsOnTrack(seq, type, track) {
+  const out = [];
+  for (const id in seq.clips) {
+    const c = seq.clips[id];
+    if (c.type === type && c.track === track) out.push(c);
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+
+export function sequenceDuration(seq) {
+  let end = 0;
+  for (const id in seq.clips) {
+    const e = clipEnd(seq.clips[id]);
+    if (e > end) end = e;
+  }
+  return end;
+}
+
+export function linkedClips(seq, clip) {
+  if (!clip.linkId) return [clip];
+  const out = [];
+  for (const id in seq.clips) if (seq.clips[id].linkId === clip.linkId) out.push(seq.clips[id]);
+  return out;
+}
+
+export function clipAt(seq, type, track, frame) {
+  for (const id in seq.clips) {
+    const c = seq.clips[id];
+    if (c.type === type && c.track === track && frame >= c.start && frame < c.start + c.duration) return c;
+  }
+  return null;
+}
+
+export function prevAdjacent(seq, clip) {
+  for (const id in seq.clips) {
+    const c = seq.clips[id];
+    if (c !== clip && c.type === clip.type && c.track === clip.track && c.start + c.duration === clip.start) return c;
+  }
+  return null;
+}
+
+export function nextAdjacent(seq, clip) {
+  const e = clip.start + clip.duration;
+  for (const id in seq.clips) {
+    const c = seq.clips[id];
+    if (c !== clip && c.type === clip.type && c.track === clip.track && c.start === e) return c;
+  }
+  return null;
+}
+
+// Kaynak süresi (saniye) bir timeline karesi için
+export function sourceTimeAt(clip, frame, fps) {
+  const local = frame - clip.start;
+  if (clip.reverse) {
+    return clip.inPoint + ((clip.duration - local - 1) / fps) * clip.speed;
+  }
+  return clip.inPoint + (local / fps) * clip.speed;
+}
+
+export function clipSourceDuration(clip, fps) {
+  return (clip.duration / fps) * clip.speed;
+}
+
+// Bir kliple kenarındaki kaynak payı (saniye): kırpma sınırları için
+export function maxClipDurationFrames(clip, media, fps) {
+  if (!media || media.type === 'image' || clip.kind !== 'media') return Infinity;
+  const avail = Math.max(0, (media.duration || 0) - clip.inPoint);
+  return Math.max(1, Math.floor((avail / clip.speed) * fps + 1e-6));
+}
+
+// Klibin kaynak bilgisi: medya ya da nested sekans (süre saniye)
+export function clipMedia(project, c) {
+  if (!c) return null;
+  if (c.kind === 'sequence') {
+    const s = project.sequences[c.seqId];
+    if (!s) return null;
+    return { type: 'video', duration: sequenceDuration(s) / s.fps, fps: s.fps, width: s.width, height: s.height, hasVideo: true, hasAudio: s.tracks.audio.length > 0 };
+  }
+  return c.mediaId ? project.media[c.mediaId] : null;
+}
+
+// outerId sekansı innerId sekansını (dolaylı da olsa) içeriyor mu? / döngü engeli
+export function sequenceContains(project, outerId, innerId, seen = new Set()) {
+  if (outerId === innerId) return true;
+  if (seen.has(outerId)) return false;
+  seen.add(outerId);
+  const s = project.sequences[outerId];
+  if (!s) return false;
+  for (const id in s.clips) {
+    const c = s.clips[id];
+    if (c.kind === 'sequence' && sequenceContains(project, c.seqId, innerId, seen)) return true;
+  }
+  return false;
+}
+
+export function allSequenceIds(project) {
+  return Object.keys(project.sequences);
+}
+
+export function mediaInUse(project, mediaId) {
+  for (const sid in project.sequences) {
+    const s = project.sequences[sid];
+    for (const cid in s.clips) if (s.clips[cid].mediaId === mediaId) return true;
+  }
+  return false;
+}
+
+export function binChildren(project, binId) {
+  const bins = Object.values(project.bins).filter((b) => b.parent === binId);
+  const media = Object.values(project.media).filter((m) => (m.binId || 'root') === binId);
+  const seqs = Object.values(project.sequences).filter((s) => (s.binId || 'root') === binId);
+  return { bins, media, seqs };
+}
+
+// Proje dosyasının eski sürümlerini güncelle ve eksik alanları tamamla
+export function normalizeProject(p) {
+  if (!p.bins) p.bins = { root: { id: 'root', name: '', parent: null } };
+  if (!p.bins.root) p.bins.root = { id: 'root', name: '', parent: null };
+  p.media = p.media || {};
+  p.sequences = p.sequences || {};
+  p.openSequenceIds = (p.openSequenceIds || []).filter((id) => p.sequences[id]);
+  for (const id in p.sequences) {
+    const s = p.sequences[id];
+    s.markers = s.markers || [];
+    s.masterVolume = s.masterVolume ?? 0;
+    for (const t of [...s.tracks.video, ...s.tracks.audio]) {
+      t.height = t.height || 46;
+      t.volume = t.volume ?? 0;
+      t.pan = t.pan ?? 0;
+    }
+    for (const cid in s.clips) {
+      const c = s.clips[cid];
+      c.effects = c.effects || [];
+      c.speed = c.speed || 1;
+      if (c.enabled === undefined) c.enabled = true;
+    }
+  }
+  if (p.activeSequenceId && !p.sequences[p.activeSequenceId]) p.activeSequenceId = null;
+  return p;
+}
