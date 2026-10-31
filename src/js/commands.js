@@ -229,6 +229,29 @@ export function applyTransition(clipId, edge, type, duration = null) {
       } else c.transOut = { type, duration: Math.max(1, Math.min(d, c.duration)) };
     }
   });
+  // Aynı klibin jiletle kesilmiş iki parçası arasında (through edit) bazı geçişler görünmez:
+  // her iki taraf da aynı kareleri gösterdiği için aynı görüntü kendisiyle karışır.
+  const s = store.seq;
+  const c = s.clips[clipId];
+  const list = clipsOnTrack(s, c.type, c.track);
+  const other = edge === 'start' ? list.find((x) => x.start + x.duration === c.start) : list.find((x) => x.start === c.start + c.duration);
+  if (other && c.type === 'video' && INVISIBLE_ON_THROUGH_EDIT.has(type)) {
+    const [A, B] = edge === 'start' ? [other, c] : [c, other];
+    if (isThroughEdit(A, B, s.fps)) {
+      toast(t('This cut joins two parts of the same clip, so this transition has no visible effect. Try Dip to Black/White, Push, Slide or Cross Zoom, or use it between different clips.'), 'info', 8000);
+    }
+  }
+}
+
+const INVISIBLE_ON_THROUGH_EDIT = new Set(['crossDissolve', 'additiveDissolve', 'filmDissolve', 'wipeRight', 'wipeLeft', 'wipeDown', 'wipeUp', 'barnDoors', 'irisRound', 'irisBox']);
+
+// A'nın sonu ile B'nin başı aynı kaynağın kesintisiz devamı mı?
+export function isThroughEdit(A, B, fps) {
+  if (!A || !B || A.kind !== 'media' || B.kind !== 'media' || A.mediaId !== B.mediaId) return false;
+  if (A.reverse || B.reverse || Math.abs(A.speed - B.speed) > 1e-6) return false;
+  if (!(A.effects || []).every((e, i) => JSON.stringify(e.params) === JSON.stringify(B.effects?.[i]?.params))) return false;
+  const aEnd = A.inPoint + (A.duration / fps) * A.speed;
+  return Math.abs(aEnd - B.inPoint) < 0.5 / fps;
 }
 
 // Oynatma kafasına en yakın kesme noktasına varsayılan geçiş

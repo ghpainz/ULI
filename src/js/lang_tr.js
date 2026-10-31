@@ -699,4 +699,5 @@ export const TR = {
   'Mask tracked: {n} frames in {s}': 'Maske takip edildi: {n} kare, {s}',
   'Mask tracking failed': 'Maske takibi başarısız',
   'Corner Point': 'Köşe Noktası',
+  'This cut joins two parts of the same clip, so this transition has no visible effect. Try Dip to Black/White, Push, Slide or Cross Zoom, or use it between different clips.': 'Bu kesme aynı klibin iki parçasını birleştiriyor; iki taraf da aynı kareleri gösterdiği için bu geçişin görünür bir etkisi olmaz. Siyaha/Beyaza Geçiş, İt, Kaydır veya Çapraz Yakınlaştırma deneyin ya da geçişi farklı iki klip arasına koyun.',
 };
