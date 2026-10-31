@@ -1,6 +1,7 @@
 // Proje veri modeli: fabrikalar ve sorgular
 import { uid } from './util.js';
 import { effectDef } from './effectsDef.js';
+import { evalParam, isAnimated } from './keyframes.js';
 
 export const PROJECT_VERSION = 1;
 
@@ -92,6 +93,7 @@ export function defaultVideoProps(seq, media) {
     anchor: param([sw / 2, sh / 2]),
     opacity: param(100),
     blendMode: 'normal',
+    timeRemap: param(100),
   };
 }
 
@@ -249,7 +251,59 @@ export function sourceTimeAt(clip, frame, fps) {
   if (clip.reverse) {
     return clip.inPoint + ((clip.duration - local - 1) / fps) * clip.speed;
   }
+  if (remapActive(clip)) return clip.inPoint + (remapIntegral(clip.props.timeRemap, local) / fps) * clip.speed;
   return clip.inPoint + (local / fps) * clip.speed;
+}
+
+// ---- Zaman yeniden eşleme (hız rampası) ----
+// props.timeRemap: hız % (keyframe'lenebilir). Kaynak zamanı = hızın zaman üzerindeki integrali.
+export function remapActive(clip) {
+  const p = clip.props && clip.props.timeRemap;
+  if (!p || clip.type !== 'video' || clip.reverse || (clip.kind !== 'media' && clip.kind !== 'sequence')) return false;
+  return isAnimated(p) || Math.abs((p.v ?? 100) - 100) > 1e-6;
+}
+
+// Klibin o anki oynatma hızı çarpanı (önizleme için)
+export function clipRateAt(clip, local) {
+  if (!remapActive(clip)) return clip.speed;
+  return clip.speed * Math.max(0, evalParam(clip.props.timeRemap, local) ?? 100) / 100;
+}
+
+// ∫_0^L hız(f)/100 df  (kare cinsinden kaynak ilerlemesi; L ondalıklı olabilir)
+export function remapIntegral(p, L) {
+  const r = (v) => Math.max(0, v ?? 100) / 100;
+  if (L <= 0) return 0;
+  if (!isAnimated(p)) return r(p.v) * L;
+  const k = p.kf;
+  let area = 0;
+  // ilk keyframe'den önce sabit
+  const segEnd = (x) => Math.min(x, L);
+  let x = 0;
+  if (k[0].f > 0) { const e = segEnd(k[0].f); area += r(k[0].v) * e; x = e; if (x >= L) return area; }
+  for (let i = 0; i < k.length - 1; i++) {
+    const a = k[i], b = k[i + 1];
+    if (b.f <= x) continue;
+    const s0 = Math.max(a.f, x), s1 = segEnd(b.f);
+    if (s1 <= s0) continue;
+    const e = a.e || 'linear';
+    if (e === 'hold') area += r(a.v) * (s1 - s0);
+    else if (e === 'linear') {
+      const span = b.f - a.f || 1;
+      const v0 = a.v + (b.v - a.v) * ((s0 - a.f) / span), v1 = a.v + (b.v - a.v) * ((s1 - a.f) / span);
+      area += ((r(v0) + r(v1)) / 2) * (s1 - s0);
+    } else {
+      // yumuşak geçiş: Simpson
+      const n = 16, h = (s1 - s0) / n;
+      let sum = r(evalParam(p, s0)) + r(evalParam(p, s1));
+      for (let j = 1; j < n; j++) sum += (j % 2 ? 4 : 2) * r(evalParam(p, s0 + j * h));
+      area += (sum * h) / 3;
+    }
+    x = s1;
+    if (x >= L) return area;
+  }
+  // son keyframe'den sonra sabit
+  if (x < L) area += r(k[k.length - 1].v) * (L - x);
+  return area;
 }
 
 export function clipSourceDuration(clip, fps) {
@@ -327,6 +381,7 @@ export function normalizeProject(p) {
       const c = s.clips[cid];
       c.effects = c.effects || [];
       c.speed = c.speed || 1;
+      if (c.type === 'video' && c.props && !c.props.timeRemap) c.props.timeRemap = { v: 100, kf: null };
       if (c.enabled === undefined) c.enabled = true;
     }
   }

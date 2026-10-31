@@ -3,7 +3,7 @@ import { store } from '../store.js';
 import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, framesToTC, parseTC, clamp, rafThrottle, LABEL_COLORS, dbToGain, uid } from '../util.js';
-import { clipsOnTrack, sequenceDuration, sourceTimeAt, createTrack, sequenceContains } from '../model.js';
+import { clipsOnTrack, sequenceDuration, sourceTimeAt, createTrack, sequenceContains, remapActive } from '../model.js';
 import * as E from '../editing.js';
 import { evalParam, isAnimated, setParamAt, addKeyframe } from '../keyframes.js';
 import { rt, getFilmstrip, mediaEvents, importFiles } from '../media.js';
@@ -12,6 +12,8 @@ import { clipSpan } from '../renderGraph.js';
 import { TRANSITIONS } from '../effectsDef.js';
 import { settings } from '../settings.js';
 import { contextMenu, promptDialog, toast } from '../ui/dialogs.js';
+import { ensureCaptions, captionAt, sortCaptions } from '../captions.js';
+import { uid as newId } from '../util.js';
 
 const HEADER_W = 156;
 const RULER_H = 34;
@@ -166,6 +168,10 @@ export class TimelinePanel {
     const rows = [];
     if (!seq) return { rows, total: 0, sepY: 0 };
     let y = 0;
+    if (seq.captions) {
+      rows.push({ type: 'caption', index: 0, y, h: 30, track: null });
+      y += 30;
+    }
     const vt = seq.tracks.video;
     for (let i = vt.length - 1; i >= 0; i--) {
       rows.push({ type: 'video', index: i, y, h: vt[i].height || 46, track: vt[i] });
@@ -242,6 +248,17 @@ export class TimelinePanel {
     const off = this.videoOffset;
     this.headersInner.style.top = (off - this.scrollY) + 'px';
     for (const r of this.layout.rows) {
+      if (r.type === 'caption') {
+        const h = el('div', { class: 'track-header', style: { top: r.y + 'px', height: r.h + 'px', background: '#2c2a22' } });
+        const vis = seq.captionsVisible !== false;
+        const lab = el('div', { class: 'tgt on', text: 'C1', style: { background: '#8a7420', borderColor: '#8a7420' } });
+        const eye = el('div', { class: 'tbtn eye' + (vis ? '' : ' on'), html: vis ? ICONS.eye : ICONS.eyeOff, title: t('Toggle Track Output') });
+        eye.addEventListener('click', () => store.commit('Toggle Captions', () => { seq.captionsVisible = !vis; }));
+        h.append(lab, eye, el('div', { class: 'tname', text: t('Captions') }));
+        h.addEventListener('contextmenu', (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: t('Add Caption'), action: () => app.commands.run('caption.add') }, { label: t('Import Captions (SRT/VTT)...'), action: () => app.commands.run('caption.import') }, { label: t('Export Captions (SRT)...'), action: () => app.commands.run('caption.export') }]); });
+        this.headersInner.appendChild(h);
+        continue;
+      }
       const tr = r.track;
       const h = el('div', { class: 'track-header ' + r.type, style: { top: r.y + 'px', height: r.h + 'px' } });
       const label = (r.type === 'video' ? 'V' : 'A') + (r.index + 1);
@@ -454,11 +471,11 @@ export class TimelinePanel {
     for (const r of L.rows) {
       const y = this.rowY(r);
       if (y > h || y + r.h < 0) continue;
-      ctx.fillStyle = r.type === 'video' ? '#1f1f24' : '#1e2222';
+      ctx.fillStyle = r.type === 'video' ? '#1f1f24' : r.type === 'caption' ? '#22211b' : '#1e2222';
       ctx.fillRect(0, y, w, r.h - 1);
       ctx.fillStyle = '#141414';
       ctx.fillRect(0, y + r.h - 1, w, 1);
-      if (r.track.locked) {
+      if (r.track && r.track.locked) {
         ctx.save();
         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 6;
@@ -495,6 +512,31 @@ export class TimelinePanel {
       const y = this.rowY(r);
       if (y > h || y + r.h < 0) continue;
       this._drawClip(ctx, c, r, y, project, seq);
+    }
+    // altyazılar
+    const crow = L.rows.find((r) => r.type === 'caption');
+    if (crow && seq.captions) {
+      const y = this.rowY(crow);
+      for (const cap of seq.captions) {
+        if (cap.end < f0 || cap.start > f1) continue;
+        const x0 = this.frameToX(cap.start), x1 = this.frameToX(cap.end);
+        const sel = store.ui.selectedCaption === cap.id;
+        ctx.globalAlpha = seq.captionsVisible === false ? 0.45 : 1;
+        ctx.fillStyle = sel ? '#e6c040' : '#a88a26';
+        ctx.fillRect(x0, y + 3, Math.max(1, x1 - x0), crow.h - 6);
+        ctx.strokeStyle = sel ? '#fff' : 'rgba(0,0,0,0.6)';
+        ctx.strokeRect(x0 + 0.5, y + 3.5, Math.max(1, x1 - x0) - 1, crow.h - 7);
+        if (x1 - x0 > 14) {
+          ctx.save();
+          ctx.beginPath(); ctx.rect(x0, y, x1 - x0, crow.h); ctx.clip();
+          ctx.fillStyle = '#1a1600';
+          ctx.font = '11px "Segoe UI", sans-serif';
+          ctx.textBaseline = 'middle';
+          ctx.fillText((cap.text || '').replace(/\n/g, ' / '), Math.max(x0, 0) + 4, y + crow.h / 2);
+          ctx.restore();
+        }
+        ctx.globalAlpha = 1;
+      }
     }
     // bırakma hayaleti
     if (this.dropGhost) {
@@ -623,7 +665,8 @@ export class TimelinePanel {
       ctx.font = '11px "Segoe UI", sans-serif';
       ctx.textBaseline = 'middle';
       let name = c.name;
-      if (c.speed !== 1 || c.reverse) name += `  [${c.reverse ? '-' : ''}${Math.round(c.speed * 100)}%]`;
+      if (remapActive(c)) name += '  [TR]';
+      else if (c.speed !== 1 || c.reverse) name += `  [${c.reverse ? '-' : ''}${Math.round(c.speed * 100)}%]`;
       if (offline) name = '⚠ ' + name;
       const tx = Math.max(x0, 0) + 4;
       let fxw = 0;
@@ -958,6 +1001,8 @@ export class TimelinePanel {
       this._startMarquee(x, y, e);
       return;
     }
+    if (h.row.type === 'caption') { this._captionDown(e, x, h); return; }
+    store.ui.selectedCaption = null;
     const track = h.row.track;
     if (tool === 'razor') {
       if (!h.clip) return;
@@ -1353,9 +1398,80 @@ export class TimelinePanel {
     });
   }
 
+  _captionHit(x) {
+    const seq = store.seq;
+    const f = this.xToFrame(x);
+    let cap = null, edge = null;
+    for (const c of seq.captions || []) {
+      const a = this.frameToX(c.start), b = this.frameToX(c.end);
+      const zone = Math.min(EDGE_PX, (b - a) / 3);
+      if (Math.abs(x - a) <= zone) { cap = c; edge = 'start'; break; }
+      if (Math.abs(x - b) <= zone) { cap = c; edge = 'end'; break; }
+      if (f >= c.start && f < c.end) cap = c;
+    }
+    return { cap, edge, f };
+  }
+
+  _captionDown(e, x, h) {
+    const seq = store.seq;
+    const { cap, edge } = this._captionHit(x);
+    store.ui.selection.clear();
+    if (!cap) { store.ui.selectedCaption = null; store.emit('selection'); app.engine.setFrame(Math.round(h.frame)); return; }
+    if (store.ui.tool === 'razor') {
+      const f = Math.round(h.frame);
+      if (f <= cap.start || f >= cap.end) return;
+      store.commit('Split Caption', (p) => {
+        const s2 = p.sequences[p.activeSequenceId];
+        const c = s2.captions.find((x2) => x2.id === cap.id);
+        s2.captions.push({ id: newId('cap'), start: f, end: c.end, text: c.text });
+        c.end = f;
+        sortCaptions(s2);
+      });
+      return;
+    }
+    store.ui.selectedCaption = cap.id;
+    store.emit('selection');
+    const id = cap.id;
+    const others = (seq.captions || []).filter((c) => c.id !== id);
+    const prevEnd = Math.max(0, ...others.filter((c) => c.end <= cap.start).map((c) => c.end));
+    const nextStart = Math.min(Infinity, ...others.filter((c) => c.start >= cap.end).map((c) => c.start));
+    const s0 = cap.start, e0 = cap.end;
+    this._liveDrag(edge ? 'Trim Caption' : 'Move Caption', e, (s2, ev, dx) => {
+      const c = s2.captions.find((x2) => x2.id === id);
+      let d = Math.round(dx / this.ppf);
+      if (edge === 'start') {
+        const tgt = this._snap(s0 + d, null);
+        c.start = clamp(tgt, prevEnd, e0 - 1);
+      } else if (edge === 'end') {
+        const tgt = this._snap(e0 + d, null);
+        c.end = clamp(tgt, s0 + 1, nextStart);
+      } else {
+        const len = e0 - s0;
+        let ns = this._snap(s0 + d, null);
+        ns = clamp(ns, prevEnd, nextStart - len);
+        c.start = ns; c.end = ns + len;
+      }
+    }, { onClick: () => app.engine.setFrame(Math.round(h.frame)) });
+  }
+
+  async _editCaption(id) {
+    const seq = store.seq;
+    const cap = (seq.captions || []).find((c) => c.id === id);
+    if (!cap) return;
+    const v = await promptDialog(t('Caption text'), cap.text, { multiline: true });
+    if (v == null) return;
+    store.commit('Edit Caption', (p) => { const c = p.sequences[p.activeSequenceId].captions.find((x2) => x2.id === id); if (c) c.text = v; });
+  }
+
   _onDblClick(e) {
     const { x, y } = this._local(e);
     const h = this.hitTest(x, y);
+    if (h && h.row && h.row.type === 'caption') {
+      const { cap } = this._captionHit(x);
+      if (cap) this._editCaption(cap.id);
+      else app.commands.run('caption.add');
+      return;
+    }
     if (!h || !h.clip) return;
     if (h.trans) { app.commands.run('transition.duration'); return; }
     const c = h.clip;
@@ -1378,6 +1494,19 @@ export class TimelinePanel {
     const seq = store.seq;
     if (!seq || !h) return;
     const C = app.commands;
+    if (h.row && h.row.type === 'caption') {
+      const { cap } = this._captionHit(x);
+      if (cap) { store.ui.selectedCaption = cap.id; store.emit('selection'); }
+      contextMenu(e.clientX, e.clientY, [
+        { label: t('Edit Caption Text...'), enabled: !!cap, action: () => this._editCaption(cap.id) },
+        { label: t('Delete'), enabled: !!cap, action: () => C.run('edit.delete') },
+        '-',
+        { label: t('Add Caption'), action: () => { app.engine.setFrame(Math.round(h.frame)); C.run('caption.add'); } },
+        { label: t('Import Captions (SRT/VTT)...'), action: () => C.run('caption.import') },
+        { label: t('Export Captions (SRT)...'), action: () => C.run('caption.export') },
+      ]);
+      return;
+    }
     if (h.band && h.band.kf && h.clip) {
       const clipId = h.clip.id, f = h.band.kf.f;
       const setE = (eName) => store.commit('Keyframe Interpolation', () => { const k = this._bandParam(seq.clips[clipId]).kf.find((k2) => k2.f === f); if (k) k.e = eName; });
@@ -1530,7 +1659,8 @@ export class TimelinePanel {
     const r = this.rowAtY(y);
     let vTrack = 0, aTrack = 0;
     if (r) {
-      if (r.type === 'video') { vTrack = r.index; aTrack = Math.min(r.index, seq ? seq.tracks.audio.length : 0); }
+      if (r.type === 'caption') { vTrack = seq ? seq.tracks.video.length : 0; aTrack = 0; }
+      else if (r.type === 'video') { vTrack = r.index; aTrack = Math.min(r.index, seq ? seq.tracks.audio.length : 0); }
       else { aTrack = r.index; vTrack = Math.min(r.index, seq ? seq.tracks.video.length - 1 : 0); }
     } else if (seq && this.layout && y + this.scrollY - this.videoOffset < 0) {
       vTrack = seq.tracks.video.length; // yeni iz

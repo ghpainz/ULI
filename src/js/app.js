@@ -20,6 +20,7 @@ import { EffectControlsPanel } from './panels/effectControls.js';
 import { EffectsPanel, LumetriPanel, AudioMixerPanel, MarkersPanel, HistoryPanel } from './panels/misc.js';
 import { openExportDialog, exportFrameDialog } from './exportDialog.js';
 import { ScopesPanel } from './panels/scopes.js';
+import { CaptionsPanel } from './panels/captionsPanel.js';
 
 const TOOL_ICONS = {
   select: '<path d="M4 2l9 6-4 1 2.5 5-2 1L7 10l-3 3z"/>',
@@ -255,6 +256,7 @@ async function boot() {
   gLB.add(new EffectsPanel());
   gLB.add(new MarkersPanel());
   gLB.add(new HistoryPanel());
+  gLB.add(new CaptionsPanel());
   gTL.add(new TimelinePanel());
   initSplitters();
   restoreTabs();
@@ -275,6 +277,7 @@ async function boot() {
   jobs.on('change', rafThrottle(updateJobs));
   mediaEvents.on('error', (msg) => alertDialog(msg, t('Import')));
   ipc.on('app:request-close', () => requestClose());
+  ipc.on('app:open-file', (e, file) => IO.openProject(file));
 
   // pencereye bırakılan dosyalar
   window.addEventListener('dragover', (e) => { e.preventDefault(); });

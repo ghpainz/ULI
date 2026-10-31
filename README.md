@@ -2,10 +2,13 @@
 
 Premiere Pro tarzı, Windows için masaüstü video kurgu uygulaması (Electron + WebGL2 + FFmpeg).
 
-## Çalıştırma
+## Kurulum
 
-`ULI Premiere.bat` dosyasına çift tıklayın. İlk çalıştırmada bağımlılıklar yoksa otomatik kurulur.
-Geliştirme için: `npm start`
+`dist\ULI Premiere Setup 0.1.0.exe` dosyasını çalıştırın. Kurulum Başlat menüsüne ve masaüstüne kısayol ekler; `.ulip` proje dosyalarına çift tıklayınca uygulama açılır. Kurulum dosyası imzasız olduğu için Windows SmartScreen "Bilinmeyen yayımcı" uyarısı gösterebilir: "Ek bilgi" > "Yine de çalıştır".
+
+Kurulum dosyasını yeniden üretmek için: `npm run dist`
+
+Kurmadan çalıştırmak için `ULI Premiere.bat` dosyasına çift tıklayın (geliştirme: `npm start`).
 
 FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 
@@ -32,6 +35,9 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 - Maskeler: elips, 4 noktalı çokgen ve kalemle bezier eğri; tüy, opaklık, genişleme, ters çevirme, Ekle/Çıkar/Kesişim modları, keyframe'li maske yolu. Opaklığa (klibin bir bölgesini göster) veya tek bir efekte (ör. yalnızca yüzü bulanıklaştır) uygulanır
 - Program monitöründe maske düzenleme: köşeyi sürükle, içinden sürükleyip taşı, kalemle tıkla = köşe / tıkla-sürükle = eğri noktası, tutamağı sürükle (Alt ile tutamağı kır), Alt+köşe sürükle = eğri tutamağı çek (çokgeni bezier'e çevirir), Alt+tık = köşe noktasına döndür, Ctrl+tık kenar = nokta ekle, Ctrl+tık köşe = nokta sil, Shift ile elipsi orantılı boyutlandır, Esc ile kalemi iptal et
 - Maske takibi: Maske Yolu satırındaki ◀| ◀◀ ▶▶ |▶ düğmeleriyle maskeyi bir kare ya da klip sonuna kadar ileri/geri takip et. "Konum" veya "Konum, Ölçek ve Döndürme" yöntemi; her kareye keyframe yazılır, Durdur ile yarıda kesilebilir, geri alınabilir. Takip kaybolursa maskeyi düzeltip o kareden yeniden başlatın
+- Lumetri eğrileri: Ana/Kırmızı/Yeşil/Mavi eğrileri ve Ton–Doygunluk eğrisi (tıkla = nokta, sürükle = ayarla, çift tık = sil)
+- Zaman yeniden eşleme (hız rampası): Efekt Kontrolleri > Zaman Yeniden Eşleme > Hız için keyframe ekleyin; Yavaş Giriş/Çıkış ile yumuşak rampa. Önizleme ve dışa aktarma aynı sonucu verir (yalnız video; ses etkilenmez)
+- Altyazılar: altyazı izi (C1), Altyazılar paneli (metin, zamanlama, stil), SRT/VTT içe-dışa aktarma, dışa aktarırken videoya gömme veya ayrı SRT dosyası (Ctrl+Alt+C: altyazı ekle)
 - Lumetri Kapsamları: Dalga formu (RGB/Luma), RGB Parade, Vektörskop YUV (renk hedefleri ve ten çizgisi), Histogram
 - Nested (iç içe) sekanslar: seçili klipleri Klip > İç İçe Yerleştir ile tek klibe çevir veya Proje panelinden bir sekansı zaman çizelgesine sürükle. Nested klibe hareket/opaklık/efekt/hız uygulanabilir, çift tıklayınca içine girilir, istenen derinlikte iç içe olabilir (sekans kendi içine konamaz)
 - Ayar katmanları, metin (başlık) klipleri, renk fonları

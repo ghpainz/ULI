@@ -4,6 +4,7 @@ import { sourceTimeAt, sequenceDuration } from './model.js';
 import { evalParam } from './keyframes.js';
 import { audioTransitionGains } from './effectsDef.js';
 import { dbToGain } from './util.js';
+import { captionAt, captionClip } from './captions.js';
 
 function enabledAdjPrev(seq, clip) {
   for (const id in seq.clips) {
@@ -151,6 +152,11 @@ export function videoLayersAt(project, seq, f, depth = 0) {
     } else {
       layers.push({ type: 'clip', track: t, item });
     }
+  }
+  // altyazılar en üstte (yalnız en dış sekansta)
+  if (depth === 0 && seq.captions && seq.captions.length && seq.captionsVisible !== false) {
+    const cap = captionAt(seq, f);
+    if (cap && cap.text) layers.push({ type: 'clip', track: nTracks, item: { clip: captionClip(seq, cap), media: null, local: f - cap.start, srcTime: 0, ownerSeq: seq, f } });
   }
   return layers;
 }

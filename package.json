@@ -5,13 +5,67 @@
   "description": "Premiere Pro tarzı video kurgu uygulaması",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64"
   },
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
-    "electron": "^38.8.6",
     "ffmpeg-static": "^5.3.0",
     "ffprobe-static": "^3.1.0"
+  },
+  "author": "ghpainz",
+  "build": {
+    "appId": "com.ghpainz.ulipremiere",
+    "productName": "ULI Premiere",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "src/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/ffprobe-static/bin/darwin/**",
+      "!node_modules/ffprobe-static/bin/linux/**",
+      "!node_modules/ffprobe-static/bin/win32/ia32/**"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**",
+      "node_modules/ffprobe-static/bin/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ULI Premiere"
+    },
+    "fileAssociations": [
+      {
+        "ext": "ulip",
+        "name": "ULI Premiere Project",
+        "description": "ULI Premiere Projesi",
+        "role": "Editor",
+        "icon": "build/icon.png"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.18.0"
   }
 }

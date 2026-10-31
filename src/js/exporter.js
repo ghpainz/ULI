@@ -6,7 +6,7 @@ import { ff } from './ffmpeg.js';
 import { Compositor } from './compositor.js';
 import { videoLayersAt, itemsOfLayers, clipSpan, clipAudioGain, trackAudible, anySolo, flattenMediaItems } from './renderGraph.js';
 import { audioFxFilters } from './effectsDef.js';
-import { sourceTimeAt, sequenceDuration } from './model.js';
+import { sourceTimeAt, sequenceDuration, remapActive } from './model.js';
 import { evalParam } from './keyframes.js';
 import { rt, loadImage } from './media.js';
 import { childProcess, nodeFs, nodePath, nodeOs, fpsToFraction, dbToGain, uid, ensureDir, sleep } from './util.js';
@@ -105,6 +105,15 @@ function createReader(clip, media, seq, from, to, renderScale) {
     return r;
   }
   let lead = 0;
+  if (remapActive(clip)) {
+    // hız rampası: kaynağı kendi kare hızında çöz, her zaman çizelgesi karesi için kaynak zamanına göre kare seç
+    const mfps = media.fps || 30;
+    const s0 = Math.max(0, sourceTimeAt(clip, from, fps));
+    args = ['-ss', s0.toFixed(6), '-i', media.path, '-an', '-sn', '-vf', `fps=${mfps},scale=${w}:${h}:flags=bicubic,vflip,format=rgba`, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
+    const r = new FrameReader(args, w, h);
+    r.map = (f) => Math.round((sourceTimeAt(clip, f, fps) - s0) * mfps);
+    return r;
+  }
   if (!clip.reverse) {
     let s0 = sourceTimeAt(clip, from, fps);
     if (s0 < 0) { lead = Math.ceil((-s0 / clip.speed) * fps - 1e-6); s0 = sourceTimeAt(clip, from + lead, fps); }
@@ -313,6 +322,8 @@ function audioArgs(o) {
 export async function exportSequence(seqIn, o, { onProgress, onStatus, signal }) {
   const project = store.project;
   const seq = structuredClone(seqIn);
+  if (o.burnCaptions === false) seq.captionsVisible = false;
+  else if (o.burnCaptions === true) seq.captionsVisible = true;
   const fmt = FORMATS[o.format];
   const fps = seq.fps;
   const f0 = Math.max(0, o.range[0]), f1 = Math.max(f0 + 1, o.range[1]);

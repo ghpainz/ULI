@@ -174,7 +174,11 @@ export class EffectControlsPanel {
         this._section('time', t('Time Remapping'), null, () => {
           const b = el('button', { text: t('Speed/Duration...'), style: { padding: '1px 8px' } });
           b.addEventListener('click', () => app.commands.run('clip.speed'));
-          this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Speed') }), el('div', { class: 'pval' }, el('span', { text: (c.reverse ? '-' : '') + Math.round(c.speed * 10000) / 100 + ' %' }), b)));
+          this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Clip Speed') }), el('div', { class: 'pval' }, el('span', { text: (c.reverse ? '-' : '') + Math.round(c.speed * 10000) / 100 + ' %' }), b)));
+          if (c.props.timeRemap && !c.reverse) {
+            this._paramRow(c, 'props.timeRemap', t('Speed'), { step: 1, min: 0, max: 1000, decimals: 1, suffix: ' %' });
+            this.props.appendChild(el('div', { class: 'ec-row', style: { color: 'var(--text-dim)', fontSize: '10px', paddingLeft: '32px' }, text: t('Turn on the stopwatch and add keyframes for speed ramps. Ease In/Out keyframes make smooth ramps.') }));
+          }
         });
       }
       if (c.kind === 'text') this._textSection(c);
@@ -294,6 +298,10 @@ export class EffectControlsPanel {
       cb.checked = !!cur;
       cb.addEventListener('change', () => setVal(cb.checked, label, false));
       val.appendChild(cb);
+    } else if (opts.type === 'curves') {
+      const lbl = el('span', { class: 'scrub', style: { cursor: 'pointer', borderBottom: 'none' }, text: t('Edit in Lumetri Color') });
+      lbl.addEventListener('click', () => app.commands.showPanel('lumetri'));
+      val.appendChild(lbl);
     } else if (opts.type === 'maskpath') {
       const n = Array.isArray(cur) ? (opts.ellipse ? 1 : Math.floor(cur.length / (opts.bezier ? 6 : 2))) : 0;
       const lbl = el('span', { class: 'scrub', style: { cursor: 'pointer', borderBottom: 'none' }, text: opts.ellipse ? t('Ellipse') : t('{n} points', { n }) });

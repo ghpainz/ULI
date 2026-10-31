@@ -35,6 +35,8 @@ uniform vec2 u_wShadows, u_wMids, u_wHighs;
 uniform float u_wShadowsL, u_wMidsL, u_wHighsL;
 uniform float u_hasLut, u_lutSize;
 uniform sampler3D u_lutTex;
+uniform float u_hasCurves;
+uniform sampler2D u_curveTex;
 vec3 wheelColor(vec2 w) {
   float len = clamp(length(w), 0.0, 1.0);
   if (len < 0.0001) return vec3(0.0);
@@ -83,6 +85,13 @@ void main() {
     vec3 cc = clamp(c, 0.0, 1.0);
     vec3 lc = texture(u_lutTex, cc * ((u_lutSize - 1.0) / u_lutSize) + 0.5 / u_lutSize).rgb;
     c = mix(c, lc, u_lutIntensity / 100.0);
+  }
+  if (u_hasCurves > 0.5) {
+    vec3 cc = clamp(c, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0;
+    c = vec3(texture(u_curveTex, vec2(cc.r, 0.5)).r, texture(u_curveTex, vec2(cc.g, 0.5)).g, texture(u_curveTex, vec2(cc.b, 0.5)).b);
+    vec3 hsv = rgb2hsv(clamp(c, 0.0, 1.0));
+    float sm = texture(u_curveTex, vec2(hsv.x * (255.0 / 256.0) + 0.5 / 256.0, 0.5)).a * 2.0;
+    c = mix(vec3(luma(c)), c, sm);
   }
   if (abs(u_vigAmount) > 0.001) {
     vec2 d = v_uv - 0.5;
@@ -141,6 +150,7 @@ export const EFFECTS = {
       { key: 'faded', label: 'Faded Film', min: 0, max: 100, default: 0, section: 'Creative' },
       { key: 'sharpen', label: 'Sharpen', min: 0, max: 100, default: 0, section: 'Creative' },
       { key: 'vibrance', label: 'Vibrance', min: -100, max: 100, default: 0, section: 'Creative' },
+      { key: 'curves', label: 'Curves', type: 'curves', default: { m: [0, 0, 1, 1], r: [0, 0, 1, 1], g: [0, 0, 1, 1], b: [0, 0, 1, 1], hs: [] }, animatable: false, section: 'Curves' },
       { key: 'wShadows', label: 'Shadow Tint', type: 'point', min: -1, max: 1, default: [0, 0], section: 'Color Wheels' },
       { key: 'wShadowsL', label: 'Shadow Lum', min: -100, max: 100, default: 0, section: 'Color Wheels' },
       { key: 'wMids', label: 'Midtone Tint', type: 'point', min: -1, max: 1, default: [0, 0], section: 'Color Wheels' },

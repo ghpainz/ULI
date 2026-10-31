@@ -4,7 +4,7 @@ import { store } from './store.js';
 import { videoLayersAt, itemsOfLayers, audioStatesAt, clipSpan, flattenMediaItems } from './renderGraph.js';
 import { AUDIO_EFFECTS } from './effectsDef.js';
 import { dbToGain } from './util.js';
-import { sequenceDuration, sourceTimeAt } from './model.js';
+import { sequenceDuration, sourceTimeAt, clipRateAt } from './model.js';
 import { playbackUrl, rt, loadImage } from './media.js';
 import { Emitter } from './util.js';
 
@@ -217,7 +217,7 @@ export class PlaybackEngine extends Emitter {
       if (!h) continue;
       used.add(h.key);
       h.last = performance.now();
-      if (realtime && !it.clip.reverse) this._syncPlaying(h, it.srcTime, it.clip.speed * (it.rateMul || 1) * this.rate);
+      if (realtime && !it.clip.reverse) this._syncPlaying(h, it.srcTime, clipRateAt(it.clip, it.local) * (it.rateMul || 1) * this.rate);
       else this._seekTo(h, it.srcTime + 0.5 / (it.media.fps || 30));
     }
     // ileriye hazırlık: yakında başlayacak klipler

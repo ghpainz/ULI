@@ -13,6 +13,7 @@ import { showPanel, resetLayout, refreshTabTitles } from './ui/layout.js';
 import { importFiles, ALL_EXT, createProxy, deleteProxy, rt, mediaEvents } from './media.js';
 import * as IO from './projectIO.js';
 import { removeMask } from './masks.js';
+import { ensureCaptions, addCaption, parseSubtitles, toSRT, toVTT } from './captions.js';
 
 const commands = new Map();
 const shortcutMap = new Map();
@@ -481,6 +482,12 @@ async function importFolderDialog() {
 function deleteSelection(ripple) {
   const s = seq();
   if (!s) return;
+  if (store.ui.selectedCaption && (s.captions || []).some((c) => c.id === store.ui.selectedCaption)) {
+    const id = store.ui.selectedCaption;
+    commitSeq('Delete Caption', (s2) => { s2.captions = s2.captions.filter((c) => c.id !== id); });
+    store.ui.selectedCaption = null;
+    return;
+  }
   const sm = store.ui.selectedMask;
   if (sm && !ripple && ['effectControls', 'program'].includes(store.ui.focusedPanel)) {
     removeMask(sm.clipId, sm.owner, sm.maskId);
@@ -942,6 +949,44 @@ export function initCommands() {
   win('markers', 'Markers', 'Shift+9');
   win('history', 'History', 'Shift+0');
   def('window.scopes', 'Lumetri Scopes', () => showPanel('scopes'));
+  def('window.captions', 'Captions', () => showPanel('captions'));
+  def('caption.add', 'Add Caption', () => {
+    let id = null;
+    commitSeq('Add Caption', (s) => { id = addCaption(s, cur(), '').id; });
+    store.ui.selectedCaption = id;
+    store.emit('selection');
+    showPanel('captions');
+    // yeni altyazının metin kutusuna odaklan
+    setTimeout(() => {
+      const caps = (store.seq.captions || []).slice().sort((a, b) => a.start - b.start);
+      const boxes = document.querySelectorAll('[data-panel="captions"] textarea');
+      const box = boxes[caps.findIndex((c) => c.id === id)];
+      if (box) box.focus();
+    }, 80);
+  }, { shortcut: 'Ctrl+Alt+C', enabled: hasSeq });
+  def('caption.import', 'Import Captions (SRT/VTT)...', async () => {
+    const r = await ipc.invoke('dialog:open', { title: t('Import Captions (SRT/VTT)...'), properties: ['openFile'], filters: [{ name: 'SRT / WebVTT', extensions: ['srt', 'vtt'] }] });
+    if (r.canceled || !r.filePaths.length) return;
+    const fs = window.require('fs');
+    let text = fs.readFileSync(r.filePaths[0], 'utf8');
+    const caps = parseSubtitles(text, seq().fps);
+    if (!caps.length) { toast(t('No captions found in file'), 'error'); return; }
+    commitSeq('Import Captions', (s) => {
+      ensureCaptions(s);
+      s.captions.push(...caps);
+      s.captions.sort((a, b) => a.start - b.start);
+    });
+    showPanel('captions');
+    toast(t('{n} captions imported', { n: caps.length }));
+  }, { enabled: hasSeq });
+  def('caption.export', 'Export Captions (SRT)...', async () => {
+    const s = seq();
+    if (!s.captions || !s.captions.length) { toast(t('No captions yet.')); return; }
+    const r = await ipc.invoke('dialog:save', { title: t('Export Captions (SRT)...'), defaultPath: nodePath.join(settings.lastExportDir || app.paths.videos, s.name.replace(/[\\/:*?"<>|]/g, '_') + '.srt'), filters: [{ name: 'SubRip (SRT)', extensions: ['srt'] }, { name: 'WebVTT', extensions: ['vtt'] }] });
+    if (r.canceled || !r.filePath) return;
+    window.require('fs').writeFileSync(r.filePath, r.filePath.toLowerCase().endsWith('.vtt') ? toVTT(s) : toSRT(s), 'utf8');
+    toast(t('Captions exported') + ': ' + nodePath.basename(r.filePath));
+  }, { enabled: hasSeq });
   def('window.resetLayout', 'Reset Workspace Layout', () => resetLayout());
   def('window.fullscreen', 'Full Screen', () => ipc.invoke('win:fullscreen'), { shortcut: 'F11' });
   def('window.maximizeFrame', 'Maximize Panel', () => app.toggleMaximize(), { shortcut: '`' });
@@ -997,7 +1042,8 @@ export function menuStructure() {
       item('sequence.lift'), item('sequence.extract'), item('sequence.rippleTrimPrev'), item('sequence.rippleTrimNext'), item('sequence.closeAllGaps'), '-',
       item('sequence.matchFrame'), item('sequence.zoomIn'), item('sequence.zoomOut'), item('sequence.zoomFit'), '-',
       { ...item('sequence.snap'), checked: () => store.ui.snapping }, { ...item('sequence.linkedSelection'), checked: () => store.ui.linkedSelection }, '-',
-      item('sequence.addTracks'), item('sequence.deleteEmptyTracks'),
+      item('sequence.addTracks'), item('sequence.deleteEmptyTracks'), '-',
+      item('caption.add'), item('caption.import'), item('caption.export'),
     ] },
     { label: t('Markers'), items: () => [
       item('mark.in'), item('mark.out'), item('mark.clip'), item('mark.selection'), '-',
@@ -1006,7 +1052,7 @@ export function menuStructure() {
       item('marker.add'), item('marker.next'), item('marker.prev'), item('marker.edit'), item('marker.clearCurrent'), item('marker.clearAll'),
     ] },
     { label: t('Window'), items: () => [
-      item('window.project'), item('window.source'), item('window.program'), item('window.timeline'), item('window.effectControls'), item('window.effects'), item('window.lumetri'), item('window.scopes'), item('window.audioMixer'), item('window.markers'), item('window.history'), '-',
+      item('window.project'), item('window.source'), item('window.program'), item('window.timeline'), item('window.effectControls'), item('window.effects'), item('window.lumetri'), item('window.scopes'), item('window.captions'), item('window.audioMixer'), item('window.markers'), item('window.history'), '-',
       item('window.maximizeFrame'), item('window.resetLayout'), item('window.fullscreen'), '-',
       item('window.toggleLang'), item('window.reload'), item('window.devtools'),
     ] },

@@ -5,6 +5,7 @@ import { t } from './i18n.js';
 import { el, ipc, nodePath, framesToTC, fmtSeconds } from './util.js';
 import { sequenceDuration } from './model.js';
 import { FORMATS, exportSequence, exportFrame } from './exporter.js';
+import { captionsInRange, toSRT } from './captions.js';
 import { ff } from './ffmpeg.js';
 import { settings, saveSettings } from './settings.js';
 import { modal, alertDialog, toast, selectEl, numInput } from './ui/dialogs.js';
@@ -65,6 +66,11 @@ export async function openExportDialog() {
   const sr = selectEl([{ value: 48000, label: '48000 Hz' }, { value: 44100, label: '44100 Hz' }], last.sampleRate || 48000);
   const abr = selectEl([128, 192, 256, 320].map((v) => ({ value: v, label: v + ' kbps' })), last.audioBitrate || 320);
   const bits = selectEl([{ value: 16, label: '16 bit' }, { value: 24, label: '24 bit' }], last.audioBits || 16);
+  const hasCaps = !!(seq.captions && seq.captions.length);
+  const burn = el('input', { type: 'checkbox' });
+  burn.checked = seq.captionsVisible !== false;
+  const srtCb = el('input', { type: 'checkbox' });
+  srtCb.checked = !!last.sidecarSrt;
   const hasIO = seq.inFrame != null || seq.outFrame != null;
   const range = selectEl([{ value: 'all', label: t('Entire Sequence') }, ...(hasIO ? [{ value: 'io', label: t('Sequence In/Out') }] : [])], hasIO ? 'io' : 'all');
   const summary = el('div', { class: 'muted', style: { marginTop: '10px', lineHeight: '1.6' } });
@@ -93,6 +99,9 @@ export async function openExportDialog() {
     ...row('sr', t('Sample Rate'), sr),
     ...row('abr', t('Audio Bitrate'), abr),
     ...row('bits', t('Sample Size'), bits),
+    el('div', { class: 'form-section', text: t('Captions'), 'data-sec': 'captions' }),
+    ...row('burn', t('Burn Captions Into Video'), burn),
+    ...row('srt', t('Create Sidecar SRT File'), srtCb),
   );
   const body = el('div', {}, grid, summary);
   const vis = () => {
@@ -112,6 +121,9 @@ export async function openExportDialog() {
     show('sr', f.audio);
     show('abr', ['mp4_h264', 'mp4_hevc', 'webm_vp9', 'mp3', 'm4a'].includes(k));
     show('bits', k === 'wav');
+    grid.querySelector('[data-sec="captions"]').style.display = hasCaps && f.video ? '' : 'none';
+    show('burn', hasCaps && f.video);
+    show('srt', hasCaps);
     quality.disabled = brMode.checked;
     const [a, b] = range.value === 'io' ? [seq.inFrame ?? 0, seq.outFrame ?? dur] : [0, dur];
     summary.innerHTML = `${t('Duration')}: <b>${framesToTC(b - a, seq.fps)}</b> (${b - a} ${t('frames')}) · ${seq.width}×${seq.height} @ ${seq.fps} fps`;
@@ -135,6 +147,7 @@ export async function openExportDialog() {
           crf: +quality.value, bitrateMode: brMode.checked, bitrate: +brIn.value, hw: hw.checked && ff.nvenc, preset: preset.value,
           proresProfile: +prores.value, gifFps: +gifFps.value, audio: f.audio && (audioCb.checked || !f.video), sampleRate: +sr.value,
           audioBitrate: +abr.value, audioBits: +bits.value, range: [a, b],
+          burnCaptions: hasCaps ? burn.checked : undefined, sidecarSrt: hasCaps && srtCb.checked,
         };
       } },
     ],
@@ -169,6 +182,10 @@ async function runExport(seq, opts) {
   });
   const started = performance.now();
   try {
+    if (opts.sidecarSrt) {
+      const s2 = { ...seq, captions: captionsInRange(seq, opts.range[0], opts.range[1]) };
+      window.require('fs').writeFileSync(opts.file.replace(/\.[^.\\/]+$/, '') + '.srt', toSRT(s2, opts.range[0]), 'utf8');
+    }
     const res = await exportSequence(seq, opts, {
       signal: ctrl.signal,
       onStatus: (s) => { status.textContent = s; },

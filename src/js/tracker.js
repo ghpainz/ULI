@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { app } from './appContext.js';
 import { ff } from './ffmpeg.js';
 import { childProcess, fpsToFraction, el, fmtSeconds } from './util.js';
-import { sourceTimeAt } from './model.js';
+import { sourceTimeAt, remapActive } from './model.js';
 import { evalParam } from './keyframes.js';
 import { findMask } from './masks.js';
 import * as MG from './maskGeom.js';
@@ -59,7 +59,7 @@ export async function trackMask({ clipId, owner, maskId, method = 'psr', dir = '
   const clip = seq?.clips[clipId];
   const media = clip?.mediaId ? store.project.media[clip.mediaId] : null;
   if (!clip || clip.kind !== 'media' || !media || media.type !== 'video' || !media.hasVideo) { toast(t('Mask tracking needs a video clip'), 'error'); return; }
-  if (clip.reverse || clip.speed < 0.01) { toast(t('Mask tracking is not available for reversed or frozen clips'), 'error'); return; }
+  if (clip.reverse || clip.speed < 0.01 || remapActive(clip)) { toast(t('Mask tracking is not available for reversed or frozen clips'), 'error'); return; }
   const mask = findMask(clip, owner, maskId);
   if (!mask) return;
   if (app.engine.playing) app.engine.pause();

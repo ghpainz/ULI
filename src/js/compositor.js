@@ -6,6 +6,7 @@ import { renderTextCanvas, textKey } from './text.js';
 import { hexToRgb, nodeFs } from './util.js';
 import { videoLayersAt } from './renderGraph.js';
 import { buildPath2D } from './maskGeom.js';
+import { buildCurveLUT, curvesActive } from './curves.js';
 
 const VS = `#version 300 es
 in vec2 a_pos;
@@ -192,7 +193,7 @@ export class Compositor {
   }
 
   _reinit() {
-    this.programs.clear(); this.textures.clear(); this.luts.clear(); this.textCache.clear(); this.maskCache.clear(); this._scopeT = null;
+    this.programs.clear(); this.textures.clear(); this.luts.clear(); this.textCache.clear(); this.maskCache.clear(); this._scopeT = null; this._curveCache = null;
     this.targets = {}; this.tempPool = []; this.W = 0; this.H = 0; this._levels = null;
     this._initGeometry();
     this.solidTex = this._makeTex();
@@ -392,6 +393,22 @@ export class Compositor {
     return l;
   }
 
+  // Eğri arama tablosu dokusu (değere göre önbellekli)
+  _curveTex(v) {
+    if (!this._curveCache) this._curveCache = new Map();
+    const key = JSON.stringify(v);
+    let tex = this._curveCache.get(key);
+    if (tex) return tex;
+    const gl = this.gl;
+    if (this._curveCache.size > 64) { for (const t of this._curveCache.values()) gl.deleteTexture(t); this._curveCache.clear(); }
+    tex = this._makeTex();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, buildCurveLUT(v));
+    this._curveCache.set(key, tex);
+    return tex;
+  }
+
   _textTexture(clip) {
     const key = textKey(clip.text);
     let c = this.textCache.get(clip.id);
@@ -425,6 +442,15 @@ export class Compositor {
         case 'bool': this._u1f(name, v ? 1 : 0); break;
         case 'select': this._u1f(name, Number(v) || 0); break;
         case 'point': this._u2f(name, v?.[0] || 0, v?.[1] || 0); break;
+        case 'curves': {
+          const on = curvesActive(v);
+          this._u1f('u_hasCurves', on ? 1 : 0);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, on ? this._curveTex(v) : this.solidTex);
+          this._u1i('u_curveTex', 2);
+          gl.activeTexture(gl.TEXTURE0);
+          break;
+        }
         case 'lut': {
           const lut = this._lut(v);
           this._u1f('u_hasLut', lut ? 1 : 0);
@@ -557,7 +583,7 @@ export class Compositor {
   _transformMatrix(clip, local, sw, sh) {
     const P = clip.props || {};
     const pos = evalParam(P.position, local) || [this.seqW / 2, this.seqH / 2];
-    const anchor = evalParam(P.anchor, local) || [sw / 2, sh / 2];
+    const anchor = evalParam(P.anchor, local) || (clip.anchorBottom ? [sw / 2, sh] : [sw / 2, sh / 2]);
     const sc = (evalParam(P.scale, local) ?? 100) / 100;
     const scw = P.uniformScale === false ? (evalParam(P.scaleWidth, local) ?? 100) / 100 : sc;
     const rot = ((evalParam(P.rotation, local) || 0) * Math.PI) / 180;

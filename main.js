@@ -122,6 +122,7 @@ function createWindow() {
     backgroundColor: '#1a1a1a',
     title: 'ULI Premiere',
     show: false,
+    icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -213,6 +214,20 @@ ipcMain.handle('app:confirm-close', () => {
   forceClose = true;
   if (mainWindow) mainWindow.close();
 });
+
+// Tek örnek: ikinci kez açılırsa (ör. .ulip dosyasına çift tık) mevcut pencereye ilet
+const gotLock = process.env.ULI_TEST ? true : app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (e, argv) => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    const file = argv.find((a) => a.toLowerCase().endsWith('.ulip'));
+    if (file) mainWindow.webContents.send('app:open-file', file);
+  });
+}
 
 app.whenReady().then(() => {
   registerProtocol();

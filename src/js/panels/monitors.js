@@ -669,7 +669,7 @@ export class ProgramMonitor {
     const layers = videoLayersAt(store.project, s, app.engine.currentFrame);
     const items = itemsOfLayers(layers).reverse();
     for (const it of items) {
-      if (it.clip.kind === 'adjustment') continue;
+      if (it.clip.kind === 'adjustment' || String(it.clip.id).startsWith('cap_')) continue;
       if (s.tracks.video[it.clip.track]?.locked) continue;
       if (this._pointInClip(it.clip, p)) return s.clips[it.clip.id];
     }

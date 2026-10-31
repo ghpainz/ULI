@@ -8,6 +8,7 @@ import { evalParam, setParamAt } from '../keyframes.js';
 import { createEffect } from '../model.js';
 import { settings, saveSettings } from '../settings.js';
 import { contextMenu, toast } from '../ui/dialogs.js';
+import { DEFAULT_CURVES, monotoneSpline, periodicSpline } from '../curves.js';
 
 // ===================== EFEKTLER =====================
 export class EffectsPanel {
@@ -122,6 +123,10 @@ export class LumetriPanel {
       const cc = p.sequences[p.activeSequenceId].clips[c.id];
       let fx = cc.effects.find((f) => f.type === 'lumetri');
       if (!fx) { fx = createEffect('lumetri'); cc.effects.push(fx); }
+      if (!fx.params[key]) {
+        const pd = EFFECTS.lumetri.params.find((x) => x.key === key);
+        fx.params[key] = { v: structuredClone(pd.default), kf: null, static: pd.animatable === false };
+      }
       setParamAt(fx.params[key], clamp(app.engine.currentFrame - cc.start, 0, cc.duration - 1), v);
     };
     if (live) store.live(fn); else store.commit(t('Lumetri Color'), fn);
@@ -223,6 +228,144 @@ export class LumetriPanel {
     this.updaters.push(() => { draw(); const cc = this._liveClip(); if (cc) lum.value = this._val(cc, lumKey); });
   }
 
+  // Eğri düzenleyici: tıkla = nokta ekle/sürükle, çift tık = noktayı sil
+  _curvesEditor(parent, c) {
+    const CH = [['m', t('Master')], ['r', t('Red')], ['g', t('Green')], ['b', t('Blue')], ['hs', t('Hue vs Sat')]];
+    if (!this._curveCh) this._curveCh = 'm';
+    const tabs = el('div', { class: 'lum-row', style: { gap: '4px' } });
+    const size = 232;
+    const dpr = window.devicePixelRatio || 1;
+    const cv = el('canvas', { width: size * dpr, height: size * dpr, style: { width: size + 'px', height: size + 'px', cursor: 'crosshair', background: '#141414', borderRadius: '3px' } });
+    const reset = el('button', { text: t('Reset'), style: { padding: '1px 8px', marginLeft: 'auto' } });
+    const get = () => ({ ...DEFAULT_CURVES, ...(structuredClone(this._val(this._liveClip() || c, 'curves')) || {}) });
+    const colors = { m: '#e8e8e8', r: '#ff5555', g: '#55e055', b: '#5c8cff', hs: '#e8c547' };
+    const draw = () => {
+      const v = get();
+      const ch = this._curveCh;
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size, size);
+      if (ch === 'hs') {
+        for (let x = 0; x < size; x++) { ctx.fillStyle = `hsl(${(x / size) * 360},60%,35%)`; ctx.fillRect(x, size - 10, 1, 10); }
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      for (let i = 1; i < 4; i++) {
+        ctx.beginPath(); ctx.moveTo((i * size) / 4, 0); ctx.lineTo((i * size) / 4, size); ctx.moveTo(0, (i * size) / 4); ctx.lineTo(size, (i * size) / 4); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath();
+      if (ch === 'hs') { ctx.moveTo(0, size / 2); ctx.lineTo(size, size / 2); } else { ctx.moveTo(0, size); ctx.lineTo(size, 0); }
+      ctx.stroke();
+      // diğer kanalları soluk göster
+      const curveOf = (k) => (k === 'hs' ? periodicSpline(v.hs) : monotoneSpline(v[k]));
+      const plot = (k, alpha) => {
+        const f = curveOf(k);
+        ctx.strokeStyle = colors[k];
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let x = 0; x <= size; x++) {
+          const y = k === 'hs' ? Math.max(0, Math.min(2, f(x / size))) / 2 : Math.max(0, Math.min(1, f(x / size)));
+          const py = size - y * size;
+          if (x === 0) ctx.moveTo(x, py); else ctx.lineTo(x, py);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      };
+      if (ch !== 'hs') for (const k of ['r', 'g', 'b', 'm']) if (k !== ch) plot(k, 0.25);
+      plot(ch, 1);
+      const pts = v[ch] || [];
+      for (let i = 0; i + 1 < pts.length; i += 2) {
+        const x = pts[i] * size, y = size - (ch === 'hs' ? pts[i + 1] / 2 : pts[i + 1]) * size;
+        ctx.fillStyle = '#111'; ctx.strokeStyle = colors[ch];
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    };
+    const setCh = (k) => { this._curveCh = k; [...tabs.children].forEach((b) => b.classList && b.classList.toggle('active', b.dataset.ch === k)); draw(); };
+    for (const [k, l] of CH) {
+      const b = el('button', { class: 'icon' + (this._curveCh === k ? ' active' : ''), text: l, style: { color: colors[k] } });
+      b.dataset.ch = k;
+      b.addEventListener('click', () => setCh(k));
+      tabs.appendChild(b);
+    }
+    tabs.appendChild(reset);
+    reset.addEventListener('click', () => {
+      const v = get();
+      v[this._curveCh] = structuredClone(DEFAULT_CURVES[this._curveCh]);
+      this._set(c, 'curves', v, false);
+      draw();
+    });
+    const toNorm = (e) => {
+      const r = cv.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      let y = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+      if (this._curveCh === 'hs') y *= 2;
+      return [x, y];
+    };
+    const nearest = (v, x, y) => {
+      const pts = v[this._curveCh] || [];
+      const ys = this._curveCh === 'hs' ? 0.5 : 1;
+      let best = -1, bd = 0.04;
+      for (let i = 0; i + 1 < pts.length; i += 2) {
+        const d = Math.hypot(pts[i] - x, (pts[i + 1] - y) * ys);
+        if (d < bd) { bd = d; best = i; }
+      }
+      return best;
+    };
+    cv.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      const ch = this._curveCh;
+      const v = get();
+      let pts = [...(v[ch] || [])];
+      let [x, y] = toNorm(e);
+      let idx = nearest(v, x, y);
+      if (idx < 0) { pts.push(x, y); idx = pts.length - 2; }
+      this._dragging = true;
+      store.begin(t('Curves'));
+      const apply = () => {
+        // noktaları x'e göre sırala; sürüklenen noktanın indeksini takip et
+        const pairs = [];
+        for (let i = 0; i + 1 < pts.length; i += 2) pairs.push([pts[i], pts[i + 1], i === idx]);
+        pairs.sort((a, b) => a[0] - b[0]);
+        pts = pairs.flatMap((p) => [p[0], p[1]]);
+        idx = pairs.findIndex((p) => p[2]) * 2;
+        const nv = get();
+        nv[ch] = pts.map((n) => Math.round(n * 1000) / 1000);
+        this._set(c, 'curves', nv, true);
+        draw();
+      };
+      apply();
+      const mv = (ev) => {
+        [x, y] = toNorm(ev);
+        // RGB eğrilerinde uç noktalar yalnızca dikey hareket eder
+        const isEnd = ch !== 'hs' && (idx === 0 || idx === pts.length - 2);
+        if (!isEnd) pts[idx] = x;
+        pts[idx + 1] = y;
+        apply();
+      };
+      const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); this._dragging = false; store.end(); };
+      window.addEventListener('mousemove', mv);
+      window.addEventListener('mouseup', up);
+    });
+    cv.addEventListener('dblclick', (e) => {
+      const ch = this._curveCh;
+      const v = get();
+      const [x, y] = toNorm(e);
+      const idx = nearest(v, x, y);
+      const pts = [...(v[ch] || [])];
+      if (idx < 0) return;
+      if (ch !== 'hs' && (idx === 0 || idx === pts.length - 2)) return;
+      pts.splice(idx, 2);
+      v[ch] = pts;
+      this._set(c, 'curves', v, false);
+      draw();
+    });
+    parent.append(tabs, el('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0' } }, cv),
+      el('div', { class: 'muted', style: { fontSize: '10px', textAlign: 'center' }, text: t('Click to add a point, drag to adjust, double-click to remove') }));
+    this.updaters.push(draw);
+    draw();
+  }
+
   _liveClip() { const s = store.seq; return s && this._clipId ? s.clips[this._clipId] : null; }
   _updateValues() { for (const u of this.updaters || []) { try { u(); } catch (e) { /* */ } } }
 
@@ -277,6 +420,7 @@ export class LumetriPanel {
       }
       for (const k of ['lutIntensity', 'faded', 'sharpen', 'vibrance']) this._slider(b, c, k);
     });
+    this._section('curves', t('Curves'), (b) => this._curvesEditor(b, c));
     this._section('wheels', t('Color Wheels'), (b) => {
       const w = el('div', { class: 'wheels' });
       this._wheel(w, c, 'wShadows', 'wShadowsL', 'Shadows');
