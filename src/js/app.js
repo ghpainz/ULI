@@ -47,7 +47,7 @@ const TOOLS = [
 function buildMenubar() {
   const bar = document.getElementById('menubar');
   bar.innerHTML = '';
-  bar.appendChild(el('div', { class: 'brand', text: 'ULI' }));
+  bar.appendChild(el('div', { class: 'brand', title: 'ULI Premiere' }, el('img', { src: 'img/logo.svg', alt: 'ULI' })));
   const menus = menuStructure();
   for (const m of menus) {
     const top = el('div', { class: 'menu-top', text: m.label });
@@ -129,7 +129,7 @@ async function showWelcome() {
     const close = () => { wrap.remove(); resolve(); };
     const mk = (label, fn, primary) => { const b = el('button', { class: primary ? 'primary' : '', text: label }); b.addEventListener('click', async () => { close(); await fn(); }); return b; };
     const left = el('div', { class: 'welcome-left' },
-      el('h1', { text: 'ULI Premiere' }),
+      el('div', { class: 'welcome-logo' }, el('img', { src: 'img/logo.svg', alt: '' }), el('h1', { text: 'ULI Premiere' })),
       mk(t('New Project'), async () => { await IO.newProject(); }, true),
       mk(t('Open Project...'), () => IO.openProject()),
       mk(t('Import Media...'), () => run('file.import')),

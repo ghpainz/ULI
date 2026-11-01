@@ -44,7 +44,7 @@
           ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -60,7 +60,7 @@
         "name": "ULI Premiere Project",
         "description": "ULI Premiere Projesi",
         "role": "Editor",
-        "icon": "build/icon.png"
+        "icon": "build/icon.ico"
       }
     ]
   },

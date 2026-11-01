@@ -58,7 +58,11 @@ button.icon.active { color: var(--accent-2); }
   height: 28px; display: flex; align-items: stretch; background: #232323; border-bottom: 1px solid var(--border);
   padding-left: 6px;
 }
-#menubar .brand { display: flex; align-items: center; padding: 0 10px 0 4px; font-weight: 700; color: var(--accent-2); letter-spacing: .5px; }
+#menubar .brand { display: flex; align-items: center; padding: 0 10px 0 2px; }
+#menubar .brand img { width: 20px; height: 20px; display: block; border-radius: 5px; box-shadow: 0 0 0 1px #4a4a55; }
+.welcome-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.welcome-logo img { width: 52px; height: 52px; }
+.welcome-logo h1 { margin: 0 !important; }
 #menubar .menu-top { padding: 0 10px; display: flex; align-items: center; cursor: default; color: var(--text); }
 #menubar .menu-top:hover, #menubar .menu-top.open { background: #383838; color: var(--text-bright); }
 #menubar .spacer { flex: 1; }
@@ -304,7 +308,7 @@ button.icon.active { color: var(--accent-2); }
 /* Karşılama ekranı */
 .welcome { position: fixed; inset: 0; background: rgba(10,10,10,.92); z-index: 800; display: flex; align-items: center; justify-content: center; }
 .welcome-box { width: 720px; background: #232323; border: 1px solid #111; border-radius: 8px; display: flex; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
-.welcome-left { flex: 0 0 240px; background: linear-gradient(160deg, #1c3a5e, #1a1a2e); padding: 28px 20px; display: flex; flex-direction: column; gap: 10px; }
+.welcome-left { flex: 0 0 240px; background: linear-gradient(160deg, #2a2150, #16161a); padding: 28px 20px; display: flex; flex-direction: column; gap: 10px; }
 .welcome-left h1 { margin: 0 0 14px; font-size: 22px; color: white; font-weight: 600; }
 .welcome-left button { text-align: left; }
 .welcome-right { flex: 1; padding: 24px; }
