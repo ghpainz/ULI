@@ -1,6 +1,7 @@
 // Medya içe aktarma, oynatılabilirlik testi, proxy, küçük resim ve dalga formu yönetimi
 import { store } from './store.js';
-import { probe, makeThumbnail, loadPeaks, makeProxy, makeFilmstrip, ff } from './ffmpeg.js';
+import { probe, makeThumbnail, loadPeaks, makeProxy, makeFilmstrip, ff, runFFmpeg, registerJob } from './ffmpeg.js';
+import { ensureDir } from './util.js';
 import { uid, nodeFs, nodePath, mediaUrl, hashString, fileExists, Emitter } from './util.js';
 import { t } from './i18n.js';
 
@@ -283,4 +284,35 @@ export function prepareAllMedia() {
 export function clearRuntime() {
   for (const [, r] of runtime) if (r.proxyJob) r.proxyJob.kill();
   runtime.clear();
+}
+
+// ---- Çevrimdışı ses efektleri için işlenmiş ses dosyası (önizleme) ----
+const processing = new Map();
+export function processedAudioUrl(m, filters, onReady) {
+  if (!m || !filters.length) return null;
+  const dir = ensureDir(nodePath.join(ff.cacheDir, 'audiofx'));
+  const key = hashString((m.key || m.path) + '|' + filters.join(','));
+  const file = nodePath.join(dir, key + '.flac');
+  if (fileExists(file) && !processing.has(key)) return mediaUrl(file);
+  if (!processing.has(key)) {
+    const job = registerJob(t('Processing audio') + ': ' + m.name);
+    const tmp = file.replace(/\.flac$/, '.tmp.flac');
+    const r = runFFmpeg(['-i', m.path, '-vn', '-af', filters.join(','), '-ar', '48000', '-ac', '2', '-c:a', 'flac', tmp], {
+      duration: m.duration || 0, onProgress: (p) => job.progress(p),
+    });
+    processing.set(key, r);
+    r.promise.then(() => {
+      try { nodeFs.renameSync(tmp, file); } catch (e) { /* */ }
+      processing.delete(key);
+      job.done();
+      if (onReady) onReady();
+      mediaEvents.emit('update', m.id);
+    }).catch((e) => {
+      processing.delete(key);
+      job.done();
+      try { nodeFs.unlinkSync(tmp); } catch (er) { /* */ }
+      mediaEvents.emit('error', t('Audio processing failed') + ': ' + m.name + '\n' + e.message);
+    });
+  }
+  return null;
 }

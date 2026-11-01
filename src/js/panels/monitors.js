@@ -28,6 +28,7 @@ const I = {
   overwrite: '<svg viewBox="0 0 16 16"><path d="M2 3h12v10H2zm2 2v6h8V5z"/><path d="M8 5.5l2.5 2.5L8 10.5z"/></svg>',
   camera: '<svg viewBox="0 0 16 16"><path d="M2 5h3l1.5-2h3L11 5h3v8H2zm6 1.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z"/></svg>',
   loop: '<svg viewBox="0 0 16 16"><path d="M4 5h7V3l3 3-3 3V7H5v2H3V6a1 1 0 011-1zM12 11H5v2l-3-3 3-3v2h6V7h2v3a1 1 0 01-1 1z"/></svg>',
+  compare: '<svg viewBox="0 0 16 16"><path d="M1 3h6v10H1zM9 3h6v10H9z" opacity=".5"/><path d="M7.25 1.5h1.5v13h-1.5z"/></svg>',
   safe: '<svg viewBox="0 0 16 16"><path d="M1 3h14v10H1zm1.5 1.5v7h11v-7zM4 6h8v4H4z" fill-rule="evenodd"/></svg>',
   proxy: '<svg viewBox="0 0 16 16"><path d="M2 2h8l4 4v8H2zm2 2v8h8V7H9V4z"/><path d="M5 9h6v1.5H5z"/></svg>',
   video: '<svg viewBox="0 0 16 16"><path d="M1 4h10v8H1zM12 7l3-2v6l-3-2z"/></svg>',
@@ -149,6 +150,11 @@ export class ProgramMonitor {
     this.loopBtn = iconBtn(I.loop, t('Loop Playback'), C('play.loop'));
     this.safeBtn = iconBtn(I.safe, t('Safe Margins'), () => { this.showSafe = !this.showSafe; this.updateButtons(); this.updateOverlay(); });
     this.proxyBtn = iconBtn(I.proxy, t('Toggle Proxies'), C('clip.toggleProxies'));
+    this.compareBtn = iconBtn(I.compare, t('Before/After Comparison'), () => { store.ui.compare = !store.ui.compare; this.updateButtons(); app.engine.requestRender(); });
+    this.cmpLabels = el('div', { style: { position: 'absolute', inset: '0', pointerEvents: 'none', display: 'none' } },
+      el('div', { class: 'overlay-msg', style: { left: '12px', top: '10px', color: '#ddd' }, text: t('Before') }),
+      el('div', { class: 'overlay-msg', style: { left: 'auto', right: '12px', top: '10px', color: '#ddd' }, text: t('After') }));
+    this.view.appendChild(this.cmpLabels);
     const grow = el('div', { class: 'grow' },
       iconBtn(I.markIn, t('Mark In') + ' (I)', C('mark.in')),
       iconBtn(I.markOut, t('Mark Out') + ' (O)', C('mark.out')),
@@ -160,7 +166,7 @@ export class ProgramMonitor {
       iconBtn(I.lift, t('Lift') + ' (;)', C('sequence.lift')),
       iconBtn(I.extract, t('Extract') + " (')", C('sequence.extract')),
       iconBtn(I.camera, t('Export Frame') + ' (Ctrl+Shift+E)', C('file.exportFrame')),
-      this.loopBtn, this.safeBtn, this.proxyBtn,
+      this.loopBtn, this.safeBtn, this.proxyBtn, this.compareBtn,
     );
     this.dur = el('div', { class: 'tc dur', title: t('Sequence duration') });
     bar.append(this.tc, this.zoomSel, grow, this.resSel, this.dur);
@@ -187,6 +193,8 @@ export class ProgramMonitor {
     this.loopBtn?.classList.toggle('active', !!store.ui.loop);
     this.safeBtn?.classList.toggle('active', !!this.showSafe);
     this.proxyBtn?.classList.toggle('active', !!store.ui.useProxies);
+    this.compareBtn?.classList.toggle('active', !!store.ui.compare);
+    if (this.cmpLabels) this.cmpLabels.style.display = store.ui.compare ? 'block' : 'none';
   }
 
   onResize() {
@@ -242,7 +250,7 @@ export class ProgramMonitor {
       const tc = app.compositor.textCache.get(c.id);
       return tc ? [tc.canvas.width, tc.canvas.height] : [400, 100];
     }
-    if (c.kind === 'color') return [store.seq.width, store.seq.height];
+    if (c.kind === 'color' || c.kind === 'graphic') return [store.seq.width, store.seq.height];
     if (c.kind === 'sequence') { const ns = store.project.sequences[c.seqId]; return ns ? [ns.width, ns.height] : [store.seq.width, store.seq.height]; }
     const m = store.project.media[c.mediaId];
     return m ? [m.width || store.seq.width, m.height || store.seq.height] : [store.seq.width, store.seq.height];

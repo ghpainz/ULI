@@ -21,6 +21,8 @@ import { EffectsPanel, LumetriPanel, AudioMixerPanel, MarkersPanel, HistoryPanel
 import { openExportDialog, exportFrameDialog } from './exportDialog.js';
 import { ScopesPanel } from './panels/scopes.js';
 import { CaptionsPanel } from './panels/captionsPanel.js';
+import { GraphicsPanel } from './panels/graphicsPanel.js';
+import { EssentialSoundPanel } from './panels/essentialSound.js';
 
 const TOOL_ICONS = {
   select: '<path d="M4 2l9 6-4 1 2.5 5-2 1L7 10l-3 3z"/>',
@@ -251,7 +253,9 @@ async function boot() {
   gLT.add(new EffectControlsPanel());
   gLT.add(new LumetriPanel());
   gLT.add(new ScopesPanel());
+  gLT.add(new GraphicsPanel());
   gLT.add(new AudioMixerPanel());
+  gLT.add(new EssentialSoundPanel());
   gLB.add(new ProjectPanel());
   gLB.add(new EffectsPanel());
   gLB.add(new MarkersPanel());

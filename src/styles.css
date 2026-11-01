@@ -316,3 +316,5 @@ button.icon.active { color: var(--accent-2); }
 .toast { position: fixed; right: 16px; bottom: 34px; background: #2c2c2c; border: 1px solid #111; border-left: 3px solid var(--accent); padding: 8px 14px; border-radius: 4px; z-index: 1100; box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: 420px; }
 .toast.error { border-left-color: var(--danger); }
 .drag-ghost { position: fixed; pointer-events: none; z-index: 1200; background: rgba(45,140,235,.85); color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+
+.es-panel .lum-slider { grid-template-columns: 150px 1fr 60px; }

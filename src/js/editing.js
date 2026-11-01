@@ -504,8 +504,8 @@ export function placeSynthetic(seq, kind, opts) {
   const dur = opts.duration;
   ensureTracks(seq, 'video', opts.track + 1);
   clearRange(seq, 'video', opts.track, opts.start, opts.start + dur);
-  const c = createClip(seq, { kind, type: 'video', track: opts.track, start: opts.start, duration: dur, name: opts.name, text: opts.text, color: opts.color });
-  if (kind === 'text' || kind === 'color' || kind === 'adjustment') {
+  const c = createClip(seq, { kind, type: 'video', track: opts.track, start: opts.start, duration: dur, name: opts.name, text: opts.text, color: opts.color, graphic: opts.graphic });
+  if (kind === 'text' || kind === 'color' || kind === 'adjustment' || kind === 'graphic') {
     c.props.anchor.v = null; // çizimde kaynağın merkezi kullanılır
   }
   seq.clips[c.id] = c;

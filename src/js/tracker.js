@@ -9,7 +9,9 @@ import { sourceTimeAt, remapActive } from './model.js';
 import { evalParam } from './keyframes.js';
 import { findMask } from './masks.js';
 import * as MG from './maskGeom.js';
-import { trackFrames } from './trackCore.js';
+import { trackFrames, integral, matchPatch, fitSimilarity } from './trackCore.js';
+import { compose, IDENT } from './stabilize.js';
+import { uid } from './util.js';
 import { t } from './i18n.js';
 import { modal, toast } from './ui/dialogs.js';
 
@@ -112,6 +114,75 @@ export async function trackMask({ clipId, owner, maskId, method = 'psr', dir = '
     } else if (written < 2) toast(t('Tracking lost after {n} frames. Adjust the mask and track again.', { n: 0 }), 'error');
   } catch (e) {
     if (!e.cancelled) toast(t('Mask tracking failed') + ': ' + e.message, 'error', 6000);
+  } finally {
+    if (closeFn) closeFn();
+  }
+}
+
+// ---- Warp Stabilizer analizi ----
+// Kareden kareye global hareketi (benzerlik) ölçer, kamera yolunu efektin stabData parametresine yazar.
+function estimateMotion(prev, cur, w, h) {
+  const ci = integral(cur, w, h);
+  const P = [], Q = [];
+  const gx = 6, gy = 4, r = 10, R = 24;
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+    const px = ((i + 0.5) / gx) * w, py = ((j + 0.5) / gy) * h;
+    const m = matchPatch(prev, cur, ci, w, h, px, py, r, px, py, R);
+    if (!m || m.score < 0.6) continue;
+    P.push([px - w / 2, py - h / 2]);
+    Q.push([m.x - w / 2, m.y - h / 2]);
+  }
+  if (P.length < 3) return null;
+  let T = fitSimilarity(P, Q);
+  // aykırıları (hareketli nesneler) at, yeniden uydur
+  const keepP = [], keepQ = [];
+  const c = Math.cos(T.rot) * T.s, s = Math.sin(T.rot) * T.s;
+  for (let k = 0; k < P.length; k++) {
+    const ex = c * P[k][0] - s * P[k][1] + T.tx - Q[k][0], ey = s * P[k][0] + c * P[k][1] + T.ty - Q[k][1];
+    if (Math.hypot(ex, ey) < 1.5) { keepP.push(P[k]); keepQ.push(Q[k]); }
+  }
+  if (keepP.length >= 3) T = fitSimilarity(keepP, keepQ);
+  return T;
+}
+
+export async function analyzeStabilize({ clipId, fxId }) {
+  const seq = store.seq;
+  const clip = seq?.clips[clipId];
+  const media = clip?.mediaId ? store.project.media[clip.mediaId] : null;
+  if (!clip || clip.kind !== 'media' || !media || media.type !== 'video') { toast(t('Warp Stabilizer needs a video clip'), 'error'); return; }
+  if (clip.reverse || clip.speed < 0.01 || remapActive(clip)) { toast(t('Warp Stabilizer is not available for reversed, frozen or time-remapped clips'), 'error'); return; }
+  if (app.engine.playing) app.engine.pause();
+  const n = Math.min(clip.duration, MAX_FRAMES);
+  const ctrl = new AbortController();
+  const bar = el('div', { class: 'progress' }, el('div'));
+  const status = el('div', { style: { marginBottom: '8px' }, text: t('Decoding frames...') });
+  let closeFn = null;
+  modal({ title: t('Warp Stabilizer'), body: el('div', { style: { width: '380px' } }, status, bar), escape: false, onOpen: (c) => { closeFn = c; }, buttons: [{ label: t('Cancel'), onClick: () => { ctrl.abort(); return false; } }] });
+  const setP = (p) => { bar.firstChild.style.width = Math.round(p * 100) + '%'; };
+  try {
+    const dec = await decodeGray(clip, media, seq, 0, n - 1, ctrl.signal, (p) => setP(p * 0.35));
+    status.textContent = t('Analyzing motion...');
+    const sc = media.width / dec.w;
+    const raw = [IDENT.slice()];
+    let C = IDENT.slice();
+    for (let i = 1; i < dec.frames.length; i++) {
+      if (ctrl.signal.aborted) throw Object.assign(new Error('cancelled'), { cancelled: true });
+      const T = estimateMotion(dec.frames[i - 1], dec.frames[i], dec.w, dec.h);
+      const M = T ? [T.s * Math.cos(T.rot), T.s * Math.sin(T.rot), T.tx * sc, T.ty * sc] : IDENT.slice();
+      C = compose(M, C);
+      raw.push(C.map((v) => Math.round(v * 1e5) / 1e5));
+      if (i % 4 === 0) { setP(0.35 + 0.65 * (i / dec.frames.length)); await new Promise((r) => setTimeout(r, 0)); }
+    }
+    store.commit('Analyze Warp Stabilizer', (pr) => {
+      const c = pr.sequences[pr.activeSequenceId].clips[clipId];
+      const fx = c && c.effects.find((x) => x.id === fxId);
+      if (!fx) return false;
+      fx.params.stabData = { v: { id: uid('stab'), raw, W: media.width, H: media.height, inPoint: clip.inPoint, fps: seq.fps, speed: clip.speed }, kf: null, static: true };
+    });
+    app.engine.requestRender();
+    toast(t('Stabilization analyzed: {n} frames', { n: raw.length }));
+  } catch (e) {
+    if (!e.cancelled) toast(t('Analysis failed') + ': ' + e.message, 'error', 6000);
   } finally {
     if (closeFn) closeFn();
   }

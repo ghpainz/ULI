@@ -35,6 +35,7 @@ function clipColor(c, project) {
   if (c.kind === 'text') return '#b06ab3';
   if (c.kind === 'color') return '#b07a3f';
   if (c.kind === 'adjustment') return '#8f8a4a';
+  if (c.kind === 'graphic') return '#a65fb8';
   if (c.kind === 'sequence') return c.type === 'video' ? '#2f9c86' : '#3d8f5c';
   const m = c.mediaId ? project.media[c.mediaId] : null;
   if (m && m.type === 'image') return '#a05f9a';
@@ -1354,8 +1355,9 @@ export class TimelinePanel {
       const tr = which === 'in' ? c.transIn : c.transOut;
       if (!tr) return;
       const df = Math.round(dx / this.ppf);
-      let d = tr0.d + (side === 'right' ? df : -df) * (tr0.two ? 2 : 1);
-      const maxD = tr0.two ? 2 * Math.min(c.duration, 600) : c.duration;
+      const centered = tr0.two && (tr.align || 'center') === 'center';
+      let d = tr0.d + (side === 'right' ? df : -df) * (centered ? 2 : 1);
+      const maxD = centered ? 2 * Math.min(c.duration, 600) : c.duration;
       tr.duration = clamp(d, 2, maxD);
     });
   }

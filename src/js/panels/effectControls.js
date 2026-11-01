@@ -8,7 +8,7 @@ import { evalParam, setParamAt, toggleAnimation, isAnimated, addKeyframe, remove
 import { defaultVideoProps, defaultAudioProps, createEffect } from '../model.js';
 import { contextMenu, toast } from '../ui/dialogs.js';
 import { maskList, findMask, addMask, removeMask } from '../masks.js';
-import { trackMask } from '../tracker.js';
+import { trackMask, analyzeStabilize } from '../tracker.js';
 
 const STOPWATCH = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="9" r="5.5"/><path d="M8 9V6M6.5 2h3M12.5 4.5l1-1"/></svg>';
 export const FONTS = ['Segoe UI', 'Arial', 'Arial Black', 'Bahnschrift', 'Calibri', 'Cambria', 'Candara', 'Comic Sans MS', 'Consolas', 'Constantia', 'Corbel', 'Courier New', 'Franklin Gothic Medium', 'Gabriola', 'Georgia', 'Impact', 'Ink Free', 'Lucida Console', 'Palatino Linotype', 'Segoe Print', 'Segoe Script', 'Sitka Text', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana'];
@@ -182,6 +182,11 @@ export class EffectControlsPanel {
         });
       }
       if (c.kind === 'text') this._textSection(c);
+      if (c.kind === 'graphic') {
+        const b = el('button', { text: t('Edit in Essential Graphics'), style: { margin: '6px 10px' } });
+        b.addEventListener('click', () => app.commands.showPanel('graphics'));
+        this.props.appendChild(b);
+      }
       if (c.kind === 'color') {
         this._section('color', t('Color Matte'), null, () => {
           const ci = el('input', { type: 'color', value: c.color || '#000000' });
@@ -298,6 +303,11 @@ export class EffectControlsPanel {
       cb.checked = !!cur;
       cb.addEventListener('change', () => setVal(cb.checked, label, false));
       val.appendChild(cb);
+    } else if (opts.type === 'stabdata') {
+      const d = cur;
+      const btn = el('button', { text: d ? t('Reanalyze') : t('Analyze'), style: { padding: '0 8px' } });
+      btn.addEventListener('click', () => analyzeStabilize({ clipId: c.id, fxId: opts.fxId }));
+      val.append(btn, el('span', { class: 'muted', text: d ? t('{n} frames analyzed', { n: d.raw.length }) : t('Not analyzed') }));
     } else if (opts.type === 'curves') {
       const lbl = el('span', { class: 'scrub', style: { cursor: 'pointer', borderBottom: 'none' }, text: t('Edit in Lumetri Color') });
       lbl.addEventListener('click', () => app.commands.showPanel('lumetri'));
@@ -363,7 +373,7 @@ export class EffectControlsPanel {
       const tc = app.compositor.textCache.get(c.id);
       return tc ? [tc.canvas.width / 2, tc.canvas.height / 2] : [0, 0];
     }
-    if (c.kind === 'color' || c.kind === 'adjustment') return [store.seq.width / 2, store.seq.height / 2];
+    if (c.kind === 'color' || c.kind === 'adjustment' || c.kind === 'graphic') return [store.seq.width / 2, store.seq.height / 2];
     if (c.kind === 'sequence') { const ns = store.project.sequences[c.seqId]; return ns ? [ns.width / 2, ns.height / 2] : [store.seq.width / 2, store.seq.height / 2]; }
     const m = store.project.media[c.mediaId];
     return [(m?.width || store.seq.width) / 2, (m?.height || store.seq.height) / 2];
@@ -478,7 +488,7 @@ export class EffectControlsPanel {
           this.props.appendChild(el('div', { class: 'ec-row', style: { color: 'var(--text-dim)', fontSize: '11px', paddingLeft: '30px' }, text: t(pd.section) }));
         }
         this._paramRow(c, `fx.${fx.id}.${pd.key}`, t(pd.label), {
-          type: pd.type, step: pd.step || ((pd.max ?? 100) - (pd.min ?? 0)) / 400, min: pd.min, max: pd.max, decimals: pd.step && pd.step >= 1 ? 0 : pd.step && pd.step < 0.1 ? 2 : 1, options: pd.options, suffix: pd.suffix,
+          type: pd.type, fxId: fx.id, step: pd.step || ((pd.max ?? 100) - (pd.min ?? 0)) / 400, min: pd.min, max: pd.max, decimals: pd.step && pd.step >= 1 ? 0 : pd.step && pd.step < 0.1 ? 2 : 1, options: pd.options, suffix: pd.suffix,
         });
       }
       if (!def.params.length) this.props.appendChild(el('div', { class: 'ec-row', style: { color: 'var(--text-dim)' }, text: t('(no parameters)') }));
@@ -588,6 +598,13 @@ export class EffectControlsPanel {
     this.props.append(
       el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Type') }), el('div', { class: 'pval' }, typeSel)),
       el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Duration') }), el('div', { class: 'pval' }, dur)),
+      st.which === 'in' ? el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Alignment') }), el('div', { class: 'pval' }, (() => {
+        const sel = el('select');
+        for (const [v, l] of [['center', 'Center at Cut'], ['start', 'Start at Cut'], ['end', 'End at Cut']]) sel.appendChild(el('option', { value: v, text: t(l) }));
+        sel.value = tr.align || 'center';
+        sel.addEventListener('change', () => store.commit('Transition Alignment', (p) => { p.sequences[p.activeSequenceId].clips[c.id].transIn.align = sel.value; }));
+        return sel;
+      })())) : el('span'),
       el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname' }), el('div', { class: 'pval' }, del)),
     );
   }

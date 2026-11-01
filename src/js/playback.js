@@ -2,7 +2,9 @@
 // her karede compositor ile görüntüyü üretir.
 import { store } from './store.js';
 import { videoLayersAt, itemsOfLayers, audioStatesAt, clipSpan, flattenMediaItems } from './renderGraph.js';
-import { AUDIO_EFFECTS } from './effectsDef.js';
+import { AUDIO_EFFECTS, reverbTaps, humFreqs, audioFxFilters } from './effectsDef.js';
+import { processedAudioUrl } from './media.js';
+import { needsNoiseFloor, ensureNoiseFloor } from './audioTools.js';
 import { dbToGain } from './util.js';
 import { sequenceDuration, sourceTimeAt, clipRateAt } from './model.js';
 import { playbackUrl, rt, loadImage } from './media.js';
@@ -270,11 +272,20 @@ export class PlaybackEngine extends Emitter {
       }
     }
     this._gc(used);
-    const res = this.comp.renderFrame(seq, layers, (it) => this._source(it), { scale: this.renderScale(), time: f / seq.fps, project });
+    const ropts = { scale: this.renderScale(), time: f / seq.fps, project };
+    const compare = !!store.ui.compare;
+    if (compare) {
+      // önce: efektler kapalı
+      this.comp.bypassFx = true;
+      this.comp.renderFrame(seq, layers, (it) => this._source(it), ropts);
+      this.comp.bypassFx = false;
+      this.comp.captureCompare();
+    }
+    const res = this.comp.renderFrame(seq, layers, (it) => this._source(it), ropts);
     this.lastMissing = res ? res.missing : 0;
     const dpr = window.devicePixelRatio || 1;
     const vw = Math.max(2, Math.round(this.viewSize.w * dpr)), vh = Math.max(2, Math.round(this.viewSize.h * dpr));
-    const rect = this.comp.present(vw, vh, this.zoom === 'fit' ? 'fit' : this.zoom * dpr);
+    const rect = this.comp.present(vw, vh, this.zoom === 'fit' ? 'fit' : this.zoom * dpr, compare);
     if (rect) this.displayRect = { x: rect.x / dpr, y: rect.y / dpr, w: rect.w / dpr, h: rect.h / dpr };
     this._meters();
     this.emit('rendered', { frame: f, missing: this.lastMissing });
@@ -304,7 +315,13 @@ export class PlaybackEngine extends Emitter {
 
   _handle(clip, media, kind) {
     const key = clip.id + ':' + kind;
-    const url = playbackUrl(media, kind);
+    let url = playbackUrl(media, kind);
+    // çevrimdışı ses efektleri (gürültü azaltma vb.): işlenmiş dosya hazırsa onu çal
+    if (kind === 'audio' && url) {
+      if (needsNoiseFloor(clip)) ensureNoiseFloor(clip.id).then(() => this.requestRender());
+      const off = audioFxFilters(clip.effects, 'offline');
+      if (off.length) url = processedAudioUrl(media, off, () => this.refreshHandles()) || url;
+    }
     let h = this.handles.get(key);
     if (h && h.url !== url) { this._dispose(h); h = null; }
     if (!url) return null;
@@ -350,7 +367,7 @@ export class PlaybackEngine extends Emitter {
   // Ses efektleri: srcNode -> [efekt düğümleri] -> gain -> pan. Ayarlar değişince zinciri yeniden kur.
   _applyFx(h, clip) {
     if (!h.srcNode) return;
-    const fx = (clip.effects || []).filter((e) => e.enabled && AUDIO_EFFECTS[e.type]);
+    const fx = (clip.effects || []).filter((e) => e.enabled && AUDIO_EFFECTS[e.type] && !AUDIO_EFFECTS[e.type].offline);
     const sig = JSON.stringify(fx.map((e) => [e.type, Object.entries(e.params).map(([k, p]) => [k, p.v])]));
     if (sig === h.fxSig) return;
     h.fxSig = sig;
@@ -395,6 +412,23 @@ export class PlaybackEngine extends Emitter {
           const wet = keep(ctx.createGain()); wet.gain.value = val(e, 'mix') / 100;
           cur.connect(out); cur.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(out);
           cur = out; break;
+        }
+        case 'reverb': {
+          const out = keep(ctx.createGain());
+          cur.connect(out);
+          for (const [ms, g] of reverbTaps(val(e, 'roomSize'), val(e, 'decay'), val(e, 'mix'))) {
+            const d = keep(ctx.createDelay(2)); d.delayTime.value = ms / 1000;
+            const gn = keep(ctx.createGain()); gn.gain.value = g;
+            cur.connect(d); d.connect(gn); gn.connect(out);
+          }
+          cur = out; break;
+        }
+        case 'dehum': {
+          for (const f of humFreqs(e)) {
+            const b = keep(ctx.createBiquadFilter()); b.type = 'notch'; b.frequency.value = f; b.Q.value = 30;
+            cur.connect(b); cur = b;
+          }
+          break;
         }
         case 'channel': {
           const up = keep(ctx.createGain()); up.channelCount = 2; up.channelCountMode = 'explicit'; up.channelInterpretation = 'speakers';

@@ -7,6 +7,8 @@ import { hexToRgb, nodeFs } from './util.js';
 import { videoLayersAt } from './renderGraph.js';
 import { buildPath2D } from './maskGeom.js';
 import { buildCurveLUT, curvesActive } from './curves.js';
+import { solve as solveStab } from './stabilize.js';
+import { renderGraphic, graphicAnimating } from './graphics.js';
 
 const VS = `#version 300 es
 in vec2 a_pos;
@@ -25,6 +27,15 @@ precision highp float;
 in vec2 v_uv; out vec4 o;
 uniform sampler2D u_tex;
 void main(){ vec4 c = texture(u_tex, v_uv); o = vec4(c.rgb, 1.0); }`;
+
+const FS_PRESENT_SPLIT = `#version 300 es
+precision highp float;
+in vec2 v_uv; out vec4 o;
+uniform sampler2D u_tex; uniform sampler2D u_tex2; uniform float u_split; uniform float u_line;
+void main(){
+  vec4 c = v_uv.x < u_split ? texture(u_tex2, v_uv) : texture(u_tex, v_uv);
+  o = abs(v_uv.x - u_split) < u_line ? vec4(1.0) : vec4(c.rgb, 1.0);
+}`;
 
 const FS_MIX = `#version 300 es
 precision highp float;
@@ -79,10 +90,19 @@ in vec2 v_uv; out vec4 o;
 uniform sampler2D u_a; uniform sampler2D u_b; uniform sampler2D u_mask;
 void main(){ o = mix(texture(u_a, v_uv), texture(u_b, v_uv), texture(u_mask, v_uv).a); }`;
 
+const FS_PADCOPY = `#version 300 es
+precision highp float;
+in vec2 v_uv; out vec4 o;
+uniform sampler2D u_tex; uniform vec2 u_scale; uniform vec2 u_off;
+void main(){
+  vec2 uv = v_uv * u_scale - u_off;
+  o = (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_tex, uv);
+}`;
+
 const FULL = new Float32Array([2, 0, 0, 0, 2, 0, -1, -1, 1]);
 
 // Maske listesini (kaynak piksel koordinatları) w×h boyutlu canvas'a çizer. k = w / kaynakGenişliği
-export function rasterizeMasks(canvas, layer, masks, local, w, h, k) {
+export function rasterizeMasks(canvas, layer, masks, local, w, h, k, off = 0) {
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   if (layer.width !== w || layer.height !== h) { layer.width = w; layer.height = h; }
   const ctx = canvas.getContext('2d');
@@ -110,6 +130,7 @@ export function rasterizeMasks(canvas, layer, masks, local, w, h, k) {
       lctx.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
       lctx.globalCompositeOperation = 'destination-out';
     }
+    if (off) lctx.setTransform(1, 0, 0, 1, off, off);
     lctx.fill(p2d);
     if (exp > 0) { lctx.lineWidth = exp * 2; lctx.stroke(p2d); }
     if (exp < 0) {
@@ -118,6 +139,7 @@ export function rasterizeMasks(canvas, layer, masks, local, w, h, k) {
       lctx.stroke(p2d);
     }
     lctx.filter = 'none';
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
     const mode = first && m.mode !== 'subtract' ? 'add' : m.mode;
     ctx.globalAlpha = opacity;
     ctx.globalCompositeOperation = mode === 'subtract' ? 'destination-out' : mode === 'intersect' ? 'destination-in' : 'source-over';
@@ -193,7 +215,7 @@ export class Compositor {
   }
 
   _reinit() {
-    this.programs.clear(); this.textures.clear(); this.luts.clear(); this.textCache.clear(); this.maskCache.clear(); this._scopeT = null; this._curveCache = null;
+    this.programs.clear(); this.textures.clear(); this.luts.clear(); this.textCache.clear(); this.maskCache.clear(); this._scopeT = null; this._curveCache = null; this._gfxCache = null; this._stabCache = null; this._cmpT = null;
     this.targets = {}; this.tempPool = []; this.W = 0; this.H = 0; this._levels = null;
     this._initGeometry();
     this.solidTex = this._makeTex();
@@ -393,6 +415,28 @@ export class Compositor {
     return l;
   }
 
+  // Warp Stabilizer: analiz edilmiş kamera yolundan bu karenin düzeltmesini hesapla
+  _setStabUniforms(fx, local) {
+    const P = (k, d) => (fx.params[k] ? fx.params[k].v : d);
+    const data = P('stabData', null);
+    const clip = this._curClip;
+    if (!data || !data.raw || !data.raw.length || !clip) { this._u1f('u_stabOn', 0); return; }
+    if (!this._stabCache) this._stabCache = new Map();
+    const opts = { smoothness: P('smoothness', 50), method: P('stabMethod', 0), crop: P('stabCrop', 0), extraScale: P('extraScale', 100) };
+    const key = fx.id + '|' + data.id + '|' + JSON.stringify(opts);
+    let sol = this._stabCache.get(key);
+    if (!sol) {
+      if (this._stabCache.size > 32) this._stabCache.clear();
+      sol = solveStab(data.raw, data.W, data.H, opts);
+      this._stabCache.set(key, sol);
+    }
+    const idx = Math.max(0, Math.min(sol.residual.length - 1, Math.round(local + ((clip.inPoint - data.inPoint) * data.fps) / (clip.speed || 1))));
+    const R = sol.residual[idx];
+    this._u1f('u_stabOn', 1);
+    this.gl.uniform4f(this._loc('u_stab'), R[0], R[1], R[2], R[3]);
+    this._u1f('u_stabZoom', sol.zoom);
+  }
+
   // Eğri arama tablosu dokusu (değere göre önbellekli)
   _curveTex(v) {
     if (!this._curveCache) this._curveCache = new Map();
@@ -407,6 +451,23 @@ export class Compositor {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, buildCurveLUT(v));
     this._curveCache.set(key, tex);
     return tex;
+  }
+
+  // Grafik klibi: katmanlar sekans boyutunda bir canvas'a çizilir; animasyon yoksa önbellekten
+  _graphicTexture(clip, local) {
+    if (!this._gfxCache) this._gfxCache = new Map();
+    let c = this._gfxCache.get(clip.id);
+    if (!c) { c = { canvas: document.createElement('canvas'), key: null, ver: 0 }; this._gfxCache.set(clip.id, c); }
+    const g = clip.graphic || { layers: [] };
+    const anim = graphicAnimating(g, local, clip.duration);
+    const key = JSON.stringify(g) + '|' + this.seqW + 'x' + this.seqH + '|' + clip.duration + (anim ? '|' + local : '|static');
+    if (key !== c.key) {
+      renderGraphic(c.canvas, g, local, clip.duration, this.seqW, this.seqH);
+      c.key = key;
+      c.ver++;
+    }
+    const e = this._uploadSource('gfx:' + clip.id, { type: 'canvas', el: c.canvas, w: c.canvas.width, h: c.canvas.height, version: c.ver, stable: true });
+    return e ? { e, w: c.canvas.width, h: c.canvas.height } : null;
   }
 
   _textTexture(clip) {
@@ -433,6 +494,7 @@ export class Compositor {
 
   _setEffectUniforms(fx, def, local) {
     const gl = this.gl;
+    if (def.stab) this._setStabUniforms(fx, local);
     for (const pd of def.params) {
       const pv = fx.params[pd.key];
       const v = pv ? evalParam(pv, local) : pd.default;
@@ -442,6 +504,7 @@ export class Compositor {
         case 'bool': this._u1f(name, v ? 1 : 0); break;
         case 'select': this._u1f(name, Number(v) || 0); break;
         case 'point': this._u2f(name, v?.[0] || 0, v?.[1] || 0); break;
+        case 'stabdata': break;
         case 'curves': {
           const on = curvesActive(v);
           this._u1f('u_hasCurves', on ? 1 : 0);
@@ -467,7 +530,7 @@ export class Compositor {
   }
 
   // Efekt zinciri: inputTex -> (geçici hedef). Sonuç {tex, temp} döner.
-  _runEffects(effects, inputTex, w, h, srcScale, local, time, maskKey = '') {
+  _runEffects(effects, inputTex, w, h, srcScale, local, time, maskKey = '', maskOff = 0) {
     const gl = this.gl;
     let curTex = inputTex;
     let curTemp = null;
@@ -500,7 +563,7 @@ export class Compositor {
         curTex = out.tex;
       }
       if (masks.length) {
-        const mt = this._maskTex(maskKey + ':' + fx.id, masks, local, w, h, srcScale);
+        const mt = this._maskTex(maskKey + ':' + fx.id, masks, local, w, h, srcScale, maskOff);
         if (mt) {
           const out = this._getTemp(w, h);
           this._bindTarget(out);
@@ -523,15 +586,15 @@ export class Compositor {
   }
 
   // Maske dokusu (önbellekli; değerler değişince yeniden çizilir)
-  _maskTex(key, masks, local, w, h, k) {
+  _maskTex(key, masks, local, w, h, k, off = 0) {
     let c = this.maskCache.get(key);
     if (!c) {
       c = { canvas: document.createElement('canvas'), layer: document.createElement('canvas'), sig: null, ver: 0, has: false };
       this.maskCache.set(key, c);
     }
-    const sig = JSON.stringify([w, h, k, masks.map((mk) => [mk.type, mk.inverted, mk.mode, evalParam(mk.path, local), evalParam(mk.feather, local), evalParam(mk.opacity, local), evalParam(mk.expansion, local)])]);
+    const sig = JSON.stringify([w, h, k, off, masks.map((mk) => [mk.type, mk.inverted, mk.mode, evalParam(mk.path, local), evalParam(mk.feather, local), evalParam(mk.opacity, local), evalParam(mk.expansion, local)])]);
     if (sig !== c.sig) {
-      c.has = rasterizeMasks(c.canvas, c.layer, masks, local, w, h, k);
+      c.has = rasterizeMasks(c.canvas, c.layer, masks, local, w, h, k, off);
       c.sig = sig;
       c.ver++;
     }
@@ -580,10 +643,12 @@ export class Compositor {
   }
 
   // Klibin dönüşüm matrisi (birim kare -> NDC)
-  _transformMatrix(clip, local, sw, sh) {
+  _transformMatrix(clip, local, sw, sh, pad = 0) {
     const P = clip.props || {};
     const pos = evalParam(P.position, local) || [this.seqW / 2, this.seqH / 2];
-    const anchor = evalParam(P.anchor, local) || (clip.anchorBottom ? [sw / 2, sh] : [sw / 2, sh / 2]);
+    const a0 = evalParam(P.anchor, local) || (clip.anchorBottom ? [sw / 2, sh] : [sw / 2, sh / 2]);
+    const anchor = [a0[0] + pad, a0[1] + pad];
+    sw += pad * 2; sh += pad * 2;
     const sc = (evalParam(P.scale, local) ?? 100) / 100;
     const scw = P.uniformScale === false ? (evalParam(P.scaleWidth, local) ?? 100) / 100 : sc;
     const rot = ((evalParam(P.rotation, local) || 0) * Math.PI) / 180;
@@ -615,6 +680,10 @@ export class Compositor {
       tex = r.tex; sw = item.nested.width; sh = item.nested.height; texW = r.w; texH = r.h;
       this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+    } else if (clip.kind === 'graphic') {
+      const r = this._graphicTexture(clip, item.local);
+      if (!r) return false;
+      entry = r.e; tex = r.e.tex; sw = this.seqW; sh = this.seqH; texW = r.w; texH = r.h;
     } else if (clip.kind === 'text') {
       const r = this._textTexture(clip);
       if (!r) return false;
@@ -634,22 +703,49 @@ export class Compositor {
     const local = item.local;
     const opacity = Math.max(0, Math.min(1, (evalParam(clip.props.opacity, local) ?? 100) / 100));
     if (opacity <= 0) return true;
-    const { m, effScale } = this._transformMatrix(clip, local, sw, sh);
-    const effects = (clip.effects || []).filter((fx) => fx.enabled && EFFECTS[fx.type]);
+    const effects = this.bypassFx ? [] : (clip.effects || []).filter((fx) => fx.enabled && EFFECTS[fx.type]);
     const masks = (clip.masks || []).filter((mk) => mk.enabled !== false);
+    // klibin dışına taşan efektler (gölge, parlama, kontur...) için kenar payı (kaynak pikseli)
+    let pad = 0;
+    for (const fx of effects) {
+      const def = EFFECTS[fx.type];
+      if (!def.pad) continue;
+      const pv = {};
+      for (const pd of def.params) pv[pd.key] = fx.params[pd.key] ? evalParam(fx.params[pd.key], local) : pd.default;
+      pad = Math.max(pad, Math.ceil(def.pad(pv) || 0));
+    }
+    pad = Math.min(pad, Math.max(sw, sh));
+    const { m, effScale } = this._transformMatrix(clip, local, sw, sh, pad);
     let useTex = tex;
     let temp = null;
     if (effects.length || masks.length) {
       let ws = Math.min(1, Math.max(0.05, effScale));
-      let w = Math.max(2, Math.round(sw * ws)), h = Math.max(2, Math.round(sh * ws));
+      const pw = sw + pad * 2, ph = sh + pad * 2;
+      let w = Math.max(2, Math.round(pw * ws)), h = Math.max(2, Math.round(ph * ws));
       const cap = 4096;
       if (w > cap || h > cap) { const k = cap / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
       if (entry) this._ensureMips(entry, texW > w * 1.6);
-      const r = effects.length ? this._runEffects(effects, tex, w, h, w / sw, local, time, clip.id) : { tex, temp: null };
-      useTex = r.tex; temp = r.temp;
+      const k = w / pw;
+      let src = tex;
+      if (pad > 0) {
+        temp = this._getTemp(w, h);
+        this._bindTarget(temp);
+        gl.disable(gl.BLEND);
+        this._use(this._compile('padcopy', FS_PADCOPY));
+        this._mat(FULL);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); this._u1i('u_tex', 0);
+        this._u2f('u_scale', pw / sw, ph / sh);
+        this._u2f('u_off', pad / sw, pad / sh);
+        this._draw();
+        src = temp.tex;
+      }
+      this._curClip = clip;
+      const r = effects.length ? this._runEffects(effects, src, w, h, k, local, time, clip.id, pad * k) : { tex: src, temp: null };
+      if (r.temp && temp && r.temp !== temp) this._releaseTemp(temp);
+      useTex = r.tex; temp = r.temp || temp;
       if (masks.length) {
         // opaklık maskeleri: efektlerden sonra, dönüşümden önce
-        const mt = this._maskTex(clip.id + ':opacity', masks, local, w, h, w / sw);
+        const mt = this._maskTex(clip.id + ':opacity', masks, local, w, h, k, pad * k);
         if (mt) {
           const out = this._maskMul(useTex, mt, w, h);
           this._releaseTemp(temp);
@@ -789,7 +885,7 @@ export class Compositor {
           this._overInto(acc, T.lt.tex);
         } else if (L.type === 'adjust') {
           const clip = L.item.clip;
-          const effects = (clip.effects || []).filter((fx) => fx.enabled && EFFECTS[fx.type]);
+          const effects = this.bypassFx ? [] : (clip.effects || []).filter((fx) => fx.enabled && EFFECTS[fx.type]);
           if (!effects.length) continue;
           const opacity = Math.max(0, Math.min(1, (evalParam(clip.props.opacity, L.item.local) ?? 100) / 100)) * (L.fade ?? 1);
           const r = this._runEffects(effects, acc.tex, this.W, this.H, this.scale, L.item.local, time, clip.id);
@@ -813,8 +909,19 @@ export class Compositor {
     return acc;
   }
 
-  // Sonucu canvas'a sığdırarak çiz (letterbox)
-  present(viewW, viewH, zoom = 'fit') {
+  // Önce/sonra karşılaştırması için mevcut sonucun kopyasını sakla
+  captureCompare() {
+    if (!this.result) return;
+    if (!this._cmpT || this._cmpT.w !== this.W || this._cmpT.h !== this.H) {
+      if (this._cmpT) this._freeTarget(this._cmpT);
+      this._cmpT = this._makeTarget(this.W, this.H);
+    }
+    this._clear(this._cmpT);
+    this._overInto(this._cmpT, this.result.tex);
+  }
+
+  // Sonucu canvas'a sığdırarak çiz (letterbox). compare: sol yarı "önce" (yakalanan), sağ yarı "sonra"
+  present(viewW, viewH, zoom = 'fit', compare = false) {
     if (this.lost || !this.result) return null;
     const gl = this.gl;
     if (this.canvas.width !== viewW || this.canvas.height !== viewH) {
@@ -836,12 +943,21 @@ export class Compositor {
     const x = (viewW - w) / 2, y = (viewH - h) / 2;
     const sx = (w / viewW) * 2, sy = (h / viewH) * 2;
     const ox = (x / viewW) * 2 - 1, oy = 1 - ((y + h) / viewH) * 2;
-    this._use(this._compile('present', FS_PRESENT));
+    const split = compare && this._cmpT && this._cmpT.w === this.W;
+    this._use(this._compile(split ? 'presentSplit' : 'present', split ? FS_PRESENT_SPLIT : FS_PRESENT));
     this._mat(new Float32Array([sx, 0, 0, 0, sy, 0, ox, oy, 1]));
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.result.tex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     this._u1i('u_tex', 0);
+    if (split) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this._cmpT.tex);
+      this._u1i('u_tex2', 1);
+      gl.activeTexture(gl.TEXTURE0);
+      this._u1f('u_split', 0.5);
+      this._u1f('u_line', 1 / Math.max(1, w));
+    }
     gl.disable(gl.BLEND);
     this._draw();
     return { x, y, w, h };
@@ -871,6 +987,7 @@ export class Compositor {
     });
     for (const [k] of this.textCache) if (!this.textures.has('text:' + k)) this.textCache.delete(k);
     for (const [k] of this.maskCache) if (!this.textures.has('mask:' + k)) this.maskCache.delete(k);
+    if (this._gfxCache) for (const [k] of this._gfxCache) if (!this.textures.has('gfx:' + k)) this._gfxCache.delete(k);
   }
 
   invalidateLut(path) {

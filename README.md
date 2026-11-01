@@ -30,8 +30,10 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 **Efektler ve renk**
 - Hareket (konum, ölçek, döndürme, bağlantı noktası), opaklık ve 13 karışım modu — hepsi keyframe'lenebilir
 - Program monitöründe sürükleyerek konum/ölçek ayarı
-- Lumetri Color: beyaz dengesi, pozlama, kontrast, parlak/gölge/beyaz/siyah, doygunluk, canlılık, .cube LUT, renk tekerlekleri, vinyet
-- Efektler: Gauss/Yönlü bulanıklık, keskinleştirme, Ultra Key (yeşil perde), kırpma, çevirme, ayna, mozaik, gürültü, posterleştirme, renk tonu, rengi bırak, siyah-beyaz, ters çevirme, parlaklık/kontrast
+- Lumetri Color: beyaz dengesi, pozlama, kontrast, parlak/gölge/beyaz/siyah, doygunluk, canlılık, .cube LUT, renk tekerlekleri, vinyet, HSL ikincil düzeltme (yalnız seçilen rengi düzelt, maskeyi göster)
+- Önce/Sonra karşılaştırması: Program monitöründeki karşılaştırma düğmesi (sol yarı efektsiz, sağ yarı efektli)
+- Efektler: Gauss/Yönlü bulanıklık, keskinleştirme, Ultra Key (yeşil perde), kırpma, çevirme, ayna, mozaik, gürültü, posterleştirme, renk tonu, rengi bırak, siyah-beyaz, ters çevirme, parlaklık/kontrast, Gölge, Parlama, Kontur, Lens Bozulması, Kromatik Sapma, Dalga Çarpıtma, Kenarları Bul, Film Greni
+- Warp Stabilizer: Efekt Kontrolleri'nde "Analiz Et" ile titrek çekimi sabitler (Konum/Ölçek/Döndürme veya yalnız Konum, yumuşaklık, otomatik kırpma-ölçekleme)
 - Maskeler: elips, 4 noktalı çokgen ve kalemle bezier eğri; tüy, opaklık, genişleme, ters çevirme, Ekle/Çıkar/Kesişim modları, keyframe'li maske yolu. Opaklığa (klibin bir bölgesini göster) veya tek bir efekte (ör. yalnızca yüzü bulanıklaştır) uygulanır
 - Program monitöründe maske düzenleme: köşeyi sürükle, içinden sürükleyip taşı, kalemle tıkla = köşe / tıkla-sürükle = eğri noktası, tutamağı sürükle (Alt ile tutamağı kır), Alt+köşe sürükle = eğri tutamağı çek (çokgeni bezier'e çevirir), Alt+tık = köşe noktasına döndür, Ctrl+tık kenar = nokta ekle, Ctrl+tık köşe = nokta sil, Shift ile elipsi orantılı boyutlandır, Esc ile kalemi iptal et
 - Maske takibi: Maske Yolu satırındaki ◀| ◀◀ ▶▶ |▶ düğmeleriyle maskeyi bir kare ya da klip sonuna kadar ileri/geri takip et. "Konum" veya "Konum, Ölçek ve Döndürme" yöntemi; her kareye keyframe yazılır, Durdur ile yarıda kesilebilir, geri alınabilir. Takip kaybolursa maskeyi düzeltip o kareden yeniden başlatın
@@ -40,13 +42,17 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 - Altyazılar: altyazı izi (C1), Altyazılar paneli (metin, zamanlama, stil), SRT/VTT içe-dışa aktarma, dışa aktarırken videoya gömme veya ayrı SRT dosyası (Ctrl+Alt+C: altyazı ekle)
 - Lumetri Kapsamları: Dalga formu (RGB/Luma), RGB Parade, Vektörskop YUV (renk hedefleri ve ten çizgisi), Histogram
 - Nested (iç içe) sekanslar: seçili klipleri Klip > İç İçe Yerleştir ile tek klibe çevir veya Proje panelinden bir sekansı zaman çizelgesine sürükle. Nested klibe hareket/opaklık/efekt/hız uygulanabilir, çift tıklayınca içine girilir, istenen derinlikte iç içe olabilir (sekans kendi içine konamaz)
+- Temel Grafikler paneli: çok katmanlı grafik klipleri (metin, dikdörtgen, elips, çizgi), katman başına giriş/çıkış animasyonu (soluklaşma, kayma, ölçek, zıplama, daktilo, silme), 8 hazır şablon (alt bant, başlık, abone ol, sosyal medya etiketi, alıntı, bölüm başlığı, bitiş kartı)
 - Ayar katmanları, metin (başlık) klipleri, renk fonları
-- 19 video geçişi ve 3 ses geçişi (Ctrl+D / Ctrl+Shift+D varsayılan geçiş)
+- 27 video geçişi (Dönme, Bulanık Geçiş, Zoom Blur, Whip Pan, Işık Sızıntısı, Glitch dahil) ve 3 ses geçişi; geçiş hizalaması (kesmede ortala/başla/bitir) (Ctrl+D / Ctrl+Shift+D varsayılan geçiş)
 - Hız/süre (ters oynatma dahil), kare dondurma
 
 **Ses**
 - Klip ses seviyesi ve pan keyframe'leri, iz mikseri (fader, pan, M/S), ana çıkış, ses ölçerleri
-- Ses efektleri: Yükselt (Amplify), Kompresör, 3 Bantlı Ekolayzer, Yüksek/Alçak Geçiren, Gecikme (Delay), Kanal (sol/sağ doldur, değiştir, mono). Efekt parametreleri sabittir (keyframe yok); nested ses kliplerine doğrudan ses efekti uygulanmaz, efekti iç sekanstaki kliplere uygulayın
+- Temel Ses paneli: klibi Diyalog/Müzik/Efekt/Ortam olarak işaretle; ses yüksekliğini hedef LUFS'a otomatik eşle, gürültü/uğultu/sızıltı onarımı, konuşmayı güçlendirme, müziği diyaloğun altında otomatik kısma (ducking)
+- Seslendirme kaydı (Ctrl+Alt+R): mikrofondan oynatma kafasına kayıt
+- Sese göre senkron: iki kaydı (ör. kamera sesi ve harici mikrofon) otomatik hizala
+- Ses efektleri: Yükselt (Amplify), Kompresör, 3 Bantlı Ekolayzer, Yüksek/Alçak Geçiren, Gecikme (Delay), Kanal (sol/sağ doldur, değiştir, mono), Yankı (Reverb), Uğultu Giderici, Gürültü Azaltıcı (gürültü tabanını otomatik ölçer), De-Esser. Gürültü azaltma ve de-esser önizlemede bir kez işlenip önbelleğe alınır. Efekt parametreleri sabittir (keyframe yok); nested ses kliplerine doğrudan ses efekti uygulanmaz, efekti iç sekanstaki kliplere uygulayın
 
 **Dışa aktarma** (Ctrl+M)
 - H.264 / H.265 (NVIDIA NVENC donanım hızlandırma destekli), ProRes 422/HQ/4444, VP9, GIF, PNG dizisi, WAV, MP3, AAC, FLAC

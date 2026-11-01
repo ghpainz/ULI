@@ -31,7 +31,8 @@ export function clipSpan(seq, clip) {
     const d = Math.max(1, clip.transIn.duration);
     const prev = enabledAdjPrev(seq, clip);
     if (prev) {
-      const rs = clip.start - Math.floor(d / 2);
+      const al = clip.transIn.align || 'center';
+      const rs = al === 'start' ? clip.start : al === 'end' ? clip.start - d : clip.start - Math.floor(d / 2);
       tin = { rs, d, type: clip.transIn.type, two: true };
       from = rs;
     } else {
@@ -41,7 +42,8 @@ export function clipSpan(seq, clip) {
   const next = enabledAdjNext(seq, clip);
   if (next && next.transIn) {
     const d = Math.max(1, next.transIn.duration);
-    const rs = next.start - Math.floor(d / 2);
+    const al = next.transIn.align || 'center';
+    const rs = al === 'start' ? next.start : al === 'end' ? next.start - d : next.start - Math.floor(d / 2);
     tout = { rs, d, type: next.transIn.type, two: true };
     to = rs + d;
   } else if (clip.transOut) {

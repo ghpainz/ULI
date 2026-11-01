@@ -152,6 +152,7 @@ export function createClip(seq, opts) {
   if (c.kind === 'text') c.text = { ...defaultTextData(), ...(opts.text || {}) };
   if (c.kind === 'color') c.color = opts.color || '#000000';
   if (c.kind === 'sequence') c.seqId = opts.seqId;
+  if (c.kind === 'graphic') c.graphic = structuredClone(opts.graphic || { layers: [] });
   return c;
 }
 

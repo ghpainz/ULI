@@ -6,6 +6,7 @@ import { ff } from './ffmpeg.js';
 import { Compositor } from './compositor.js';
 import { videoLayersAt, itemsOfLayers, clipSpan, clipAudioGain, trackAudible, anySolo, flattenMediaItems } from './renderGraph.js';
 import { audioFxFilters } from './effectsDef.js';
+import { needsNoiseFloor, ensureNoiseFloor } from './audioTools.js';
 import { sourceTimeAt, sequenceDuration, remapActive } from './model.js';
 import { evalParam } from './keyframes.js';
 import { rt, loadImage } from './media.js';
@@ -177,9 +178,10 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
     }
     if (srcDur <= 0) { x.skip = true; continue; }
     const af = [];
+    af.push(...audioFxFilters(c.effects, 'offline'));
     if (c.reverse) af.push('areverse');
     af.push(...atempoChain(c.speed));
-    af.push(...audioFxFilters(c.effects));
+    af.push(...audioFxFilters(c.effects, 'realtime'));
     af.push(`aresample=${sr}`);
     let input = ['-ss', srcStart.toFixed(6), '-t', srcDur.toFixed(6), '-i', m.path];
     let nestedFile = null;
@@ -342,6 +344,9 @@ export async function exportSequence(seqIn, o, { onProgress, onStatus, signal })
   signal.addEventListener('abort', abort);
   const t0 = performance.now();
   try {
+    // 0) otomatik gürültü tabanı gereken klipler (en dış sekans)
+    for (const id in seqIn.clips) if (needsNoiseFloor(seqIn.clips[id])) await ensureNoiseFloor(id);
+    for (const id in seq.clips) { const live = store.seq && store.seq.clips[id]; if (live) seq.clips[id].effects = structuredClone(live.effects); }
     // 1) ses
     let audioFile = null;
     if (fmt.audio && o.audio) {

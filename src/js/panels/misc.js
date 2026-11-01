@@ -150,6 +150,37 @@ export class LumetriPanel {
     if (!this.collapsed.has(key)) build(b);
   }
 
+  _check(parent, c, key) {
+    const pd = EFFECTS.lumetri.params.find((p) => p.key === key);
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = !!this._val(c, key);
+    cb.addEventListener('change', () => this._set(c, key, cb.checked, false));
+    parent.appendChild(el('label', { class: 'lum-row', style: { gap: '6px' } }, cb, t(pd.label)));
+    this.updaters.push(() => { const cc = this._liveClip(); if (cc) cb.checked = !!this._val(cc, key); });
+  }
+
+  // Seçili ton aralığını gösteren şerit
+  _hueStrip(parent, c) {
+    const cv = el('canvas', { width: 360, height: 14, style: { width: '100%', height: '14px', borderRadius: '2px', display: 'block', margin: '4px 0 6px' } });
+    const draw = () => {
+      const cc = this._liveClip() || c;
+      const hue = this._val(cc, 'hslHue'), range = this._val(cc, 'hslHueRange');
+      const ctx = cv.getContext('2d');
+      for (let x = 0; x < 360; x++) {
+        let d = Math.abs(x - hue); d = Math.min(d, 360 - d);
+        const on = d <= range / 2;
+        ctx.fillStyle = `hsl(${x},${on ? 85 : 30}%,${on ? 50 : 22}%)`;
+        ctx.fillRect(x, 0, 1, 14);
+      }
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(Math.round(hue) - 1, 0, 2, 14);
+    };
+    parent.appendChild(cv);
+    this.updaters.push(draw);
+    draw();
+    return draw;
+  }
+
   _slider(parent, c, key) {
     const pd = EFFECTS.lumetri.params.find((p) => p.key === key);
     const step = pd.step || 1;
@@ -421,6 +452,16 @@ export class LumetriPanel {
       for (const k of ['lutIntensity', 'faded', 'sharpen', 'vibrance']) this._slider(b, c, k);
     });
     this._section('curves', t('Curves'), (b) => this._curvesEditor(b, c));
+    this._section('hsl', t('HSL Secondary'), (b) => {
+      this._check(b, c, 'hslEnable');
+      this._check(b, c, 'hslShowMask');
+      b.appendChild(el('div', { class: 'muted', style: { margin: '6px 0 0' }, text: t('Key') }));
+      const redraw = this._hueStrip(b, c);
+      for (const k of ['hslHue', 'hslHueRange', 'hslSatMin', 'hslLumMin', 'hslLumMax', 'hslSoft']) this._slider(b, c, k);
+      b.querySelectorAll('input[type=range]').forEach((r) => r.addEventListener('input', redraw));
+      b.appendChild(el('div', { class: 'muted', style: { margin: '6px 0 4px' }, text: t('Correction') }));
+      for (const k of ['hslHueShift', 'hslSat', 'hslExposure', 'hslContrast', 'hslTemp', 'hslTint']) this._slider(b, c, k);
+    });
     this._section('wheels', t('Color Wheels'), (b) => {
       const w = el('div', { class: 'wheels' });
       this._wheel(w, c, 'wShadows', 'wShadowsL', 'Shadows');
