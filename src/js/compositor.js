@@ -675,7 +675,7 @@ export class Compositor {
     const clip = item.clip;
     let tex = null, sw = 0, sh = 0, texW = 0, texH = 0, entry = null;
     if (clip.kind === 'sequence') {
-      const r = item.nested ? this._renderNested(item.nested, item.nestedFrame, getSource, time) : null;
+      const r = item.nested ? this._renderNested(item.nested, item.nestedFrame, getSource, time, item.onlyTrack) : null;
       if (!r) return false;
       tex = r.tex; sw = item.nested.width; sh = item.nested.height; texW = r.w; texH = r.h;
       this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
@@ -830,7 +830,7 @@ export class Compositor {
   }
 
   // Nested sekansın bir karesini çiz, sonuç dokusunu döndür
-  _renderNested(nested, frame, getSource, time) {
+  _renderNested(nested, frame, getSource, time, onlyTrack = null) {
     if (!this._project || this._depth >= 6) return null;
     const save = { seqW: this.seqW, seqH: this.seqH, W: this.W, H: this.H };
     const W = Math.max(2, Math.round(nested.width * this.scale)), H = Math.max(2, Math.round(nested.height * this.scale));
@@ -839,7 +839,7 @@ export class Compositor {
     this.seqW = nested.width; this.seqH = nested.height; this.W = W; this.H = H;
     let acc = null;
     try {
-      const layers = videoLayersAt(this._project, nested, frame, this._depth);
+      const layers = videoLayersAt(this._project, nested, frame, this._depth, onlyTrack);
       acc = this._composite(layers, getSource, time, T);
     } finally {
       Object.assign(this, save);

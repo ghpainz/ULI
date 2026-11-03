@@ -7,6 +7,7 @@ import { processedAudioUrl } from './media.js';
 import { needsNoiseFloor, ensureNoiseFloor } from './audioTools.js';
 import { dbToGain } from './util.js';
 import { sequenceDuration, sourceTimeAt, clipRateAt } from './model.js';
+import { multicamGridLayers } from './multicam.js';
 import { playbackUrl, rt, loadImage } from './media.js';
 import { Emitter } from './util.js';
 
@@ -207,7 +208,13 @@ export class PlaybackEngine extends Emitter {
     const seq = this.seq;
     const project = store.project;
     const f = Math.floor(this.frame);
-    const layers = videoLayersAt(project, seq, f);
+    let layers = videoLayersAt(project, seq, f);
+    // multicam görünümü: açı ızgarası + program
+    this.multicam = null;
+    if (store.ui.multicamView) {
+      const g = multicamGridLayers(project, seq, f);
+      if (g) { layers = g.layers; this.multicam = g; }
+    }
     const items = flattenMediaItems(project, itemsOfLayers(layers));
     const used = new Set();
     const realtime = this.playing && this.rate > 0 && this.rate <= 4;
@@ -261,7 +268,7 @@ export class PlaybackEngine extends Emitter {
       const tgain = realtime ? s.gain : 0;
       h.gain.gain.setTargetAtTime(tgain, this.ctx.currentTime, 0.012);
       h.pan.pan.setTargetAtTime(s.pan, this.ctx.currentTime, 0.02);
-      if (realtime && !s.clip.reverse) this._syncPlaying(h, s.srcTime, s.clip.speed * (s.rateMul || 1) * this.rate, 0.12);
+      if (realtime && !s.clip.reverse) this._syncPlaying(h, s.srcTime, (s.rate ?? s.clip.speed) * (s.rateMul || 1) * this.rate, 0.12);
       else if (!h.el.paused) h.el.pause();
     }
     // kullanılmayanları durdur
@@ -486,8 +493,8 @@ export class PlaybackEngine extends Emitter {
 
   _syncPlaying(h, t, rate, tol = 0.2) {
     const el = h.el;
-    if (rate <= 0) return;
-    const r = Math.max(0.0625, Math.min(16, rate));
+    if (rate < 0.0625) { if (!el.paused) el.pause(); return; } // dondurulmuş kare (hız rampası %0)
+    const r = Math.min(16, rate);
     if (Math.abs(el.playbackRate - r) > 1e-3) el.playbackRate = r;
     if (el.paused) {
       if (!h.seeking && Math.abs(el.currentTime - t) > 0.04) { h.seeking = true; el.currentTime = t; }

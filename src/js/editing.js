@@ -24,9 +24,9 @@ export function trimEnd(c, delta, fps) {
 // Klibin kaynak payları (kare): baştan ve sondan ne kadar uzatılabilir
 export function headroom(c, media, fps) {
   if ((c.kind !== 'media' && c.kind !== 'sequence') || !media || media.type === 'image') return { start: Infinity, end: Infinity };
-  const dur = media.duration || 0;
-  const before = Math.floor((c.inPoint * fps) / c.speed + EPS);
-  const after = Math.floor(((dur - c.inPoint) * fps) / c.speed - c.duration + EPS);
+  const lo = media.subStart ?? 0, hi = media.subEnd ?? media.duration ?? 0; // alt klipler kendi aralığıyla sınırlı
+  const before = Math.floor(((c.inPoint - lo) * fps) / c.speed + EPS);
+  const after = Math.floor(((hi - c.inPoint) * fps) / c.speed - c.duration + EPS);
   return c.reverse ? { start: Math.max(0, after), end: Math.max(0, before) } : { start: Math.max(0, before), end: Math.max(0, after) };
 }
 

@@ -3,7 +3,7 @@ import { store } from '../store.js';
 import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, framesToTC, parseTC, clamp, rafThrottle, LABEL_COLORS, dbToGain, uid } from '../util.js';
-import { clipsOnTrack, sequenceDuration, sourceTimeAt, createTrack, sequenceContains, remapActive } from '../model.js';
+import { clipsOnTrack, sequenceDuration, sourceTimeAt, createTrack, sequenceContains, remapActive, mediaInOut, audioRemapClip, clipRateAt } from '../model.js';
 import * as E from '../editing.js';
 import { evalParam, isAnimated, setParamAt, addKeyframe } from '../keyframes.js';
 import { rt, getFilmstrip, mediaEvents, importFiles } from '../media.js';
@@ -645,11 +645,12 @@ export class TimelinePanel {
         const visL = Math.max(Math.floor(x0), 0), visR = Math.min(Math.ceil(x1), Math.ceil(this.canvas.width));
         const animated = isAnimated(c.props.volume);
         const staticGain = dbToGain(c.props.volume.v ?? 0);
+        const rc = audioRemapClip(seq, c);
         for (let x = visL; x < visR; x++) {
           const fa = c.start + (x - x0) / this.ppf;
           const fb = fa + 1 / this.ppf;
-          const ta = sourceTimeAt(c, Math.floor(fa), seq.fps) + ((fa % 1) / seq.fps) * c.speed;
-          const tb = sourceTimeAt(c, Math.floor(fb), seq.fps) + ((fb % 1) / seq.fps) * c.speed;
+          const ta = sourceTimeAt(rc, Math.floor(fa), seq.fps) + ((fa % 1) / seq.fps) * clipRateAt(rc, fa - c.start);
+          const tb = sourceTimeAt(rc, Math.floor(fb), seq.fps) + ((fb % 1) / seq.fps) * clipRateAt(rc, fb - c.start);
           let i0 = Math.floor(Math.min(ta, tb) * PEAK_RATE), i1 = Math.ceil(Math.max(ta, tb) * PEAK_RATE);
           if (i1 <= i0) i1 = i0 + 1;
           let p = 0;
@@ -666,7 +667,7 @@ export class TimelinePanel {
       ctx.font = '11px "Segoe UI", sans-serif';
       ctx.textBaseline = 'middle';
       let name = c.name;
-      if (remapActive(c)) name += '  [TR]';
+      if (remapActive(c) || (c.type === 'audio' && remapActive(audioRemapClip(seq, c)))) name += '  [TR]';
       else if (c.speed !== 1 || c.reverse) name += `  [${c.reverse ? '-' : ''}${Math.round(c.speed * 100)}%]`;
       if (offline) name = '⚠ ' + name;
       const tx = Math.max(x0, 0) + 4;
@@ -686,6 +687,19 @@ export class TimelinePanel {
     // rubber band (opaklık / ses seviyesi)
     const showBand = c.type === 'audio' ? ch >= 36 : ch >= 70;
     if (showBand && cw > 6) this._drawBand(ctx, c, x0, x1, top + headH, ch - headH);
+    // klip (kaynak medya) işaretçileri
+    if (media?.markers?.length && cw > 8) {
+      const sp = Math.abs(c.speed) || 1;
+      const srcEnd = c.inPoint + (c.duration / seq.fps) * sp;
+      for (const mk of media.markers) {
+        if (mk.t < c.inPoint - 1e-6 || mk.t >= srcEnd) continue;
+        const f = c.start + ((c.reverse ? srcEnd - mk.t : mk.t - c.inPoint) * seq.fps) / sp;
+        const mx = this.frameToX(f);
+        ctx.fillStyle = mk.color || '#e3a42c';
+        ctx.beginPath(); ctx.moveTo(mx - 4, top + headH); ctx.lineTo(mx + 4, top + headH); ctx.lineTo(mx, top + headH + 6); ctx.closePath(); ctx.fill();
+        ctx.fillRect(mx - 0.5, top + headH, 1, ch - headH);
+      }
+    }
     ctx.restore();
     // kenarlık
     ctx.strokeStyle = sel ? '#ffffff' : 'rgba(0,0,0,0.6)';
@@ -1554,6 +1568,8 @@ export class TimelinePanel {
         '-',
         { label: t('Speed/Duration...'), shortcut: 'Ctrl+R', action: () => C.run('clip.speed') },
         { label: t('Nest...'), action: () => C.run('clip.nest') },
+        { label: t('Make Subclip...'), shortcut: 'Ctrl+U', action: () => C.run('clip.makeSubclip') },
+        { label: t('Scene Edit Detection...'), action: () => C.run('clip.sceneDetect') },
         { label: t('Open Nested Sequence'), enabled: c.kind === 'sequence', action: () => app.commands.openSequence(c.seqId) },
         { label: t('Scale to Frame Size'), enabled: c.type === 'video', action: () => C.run('clip.scaleToFrame') },
         { label: t('Set to Frame Size'), enabled: c.type === 'video', action: () => C.run('clip.setToFrame') },
@@ -1687,7 +1703,7 @@ export class TimelinePanel {
       const durs = ids.map((id) => {
         const m = store.project.media[id];
         if (!m) return 0;
-        const inS = m.inPoint ?? 0, outS = m.outPoint ?? m.duration ?? 0;
+        const { inSec: inS, outSec: outS } = mediaInOut(m);
         return m.type === 'image' ? Math.round((settings.stillDuration || 5) * seq.fps) : Math.max(1, Math.round((outS - inS) * seq.fps));
       });
       for (const sid of seqIds) {
@@ -1779,7 +1795,7 @@ export class TimelinePanel {
       for (const m of medias) {
         const ids2 = E.placeMedia(p, seq, m, {
           start: at, vTrack: tg.vTrack, aTrack: tg.aTrack, mode: insert ? 'insert' : 'overwrite',
-          inSec: m.inPoint ?? 0, outSec: m.outPoint ?? m.duration, settings,
+          ...mediaInOut(m), settings,
         });
         placed.push(...ids2);
         const c = seq.clips[ids2[0]];

@@ -11,6 +11,9 @@ export const mediaEvents = new Emitter();
 const runtime = new Map();
 
 export function rt(id) {
+  // alt klipler ana medyanın çalışma zamanı bilgisini (küçük resim, dalga formu, proxy) paylaşır
+  const pm = store.project?.media?.[id];
+  if (pm?.parentId && store.project.media[pm.parentId]) id = pm.parentId;
   let r = runtime.get(id);
   if (!r) {
     r = { thumb: null, peaks: null, playable: null, proxyProgress: null, proxyJob: null, image: null, imageReady: false, filmstrip: null, offline: false, testing: false };
@@ -89,6 +92,8 @@ export async function prepareMedia(id) {
   }
   r.offline = false;
   if (!m.key) m.key = mediaKey(m.path);
+  const parent = m.parentId ? store.project.media[m.parentId] : null;
+  if (parent) { m.proxyPath = parent.proxyPath; mediaEvents.emit('update', id); return; }
   if (m.type === 'image') {
     r.thumb = mediaUrl(m.path);
     loadImage(id);
@@ -165,7 +170,10 @@ export async function testPlayable(id) {
   return pl;
 }
 
+const rootId = (id) => { const m = store.project.media[id]; return m?.parentId && store.project.media[m.parentId] ? m.parentId : id; };
+
 export function createProxy(id) {
+  id = rootId(id);
   const m = store.project.media[id];
   if (!m || m.type === 'image') return;
   const r = rt(id);
@@ -185,6 +193,7 @@ export function createProxy(id) {
     r.proxyProgress = null;
     const mm = store.project.media[id];
     if (mm) mm.proxyPath = out;
+    for (const sub of Object.values(store.project.media)) if (sub.parentId === id) sub.proxyPath = out;
     store.markDirty();
     mediaEvents.emit('update', id);
     mediaEvents.emit('proxyReady', id);
@@ -203,10 +212,12 @@ export function cancelProxy(id) {
 }
 
 export function deleteProxy(id) {
+  id = rootId(id);
   const m = store.project.media[id];
   if (!m || !m.proxyPath) return;
   try { nodeFs.unlinkSync(m.proxyPath); } catch (e) { /* */ }
   m.proxyPath = null;
+  for (const sub of Object.values(store.project.media)) if (sub.parentId === id) sub.proxyPath = null;
   store.markDirty();
   mediaEvents.emit('update', id);
   mediaEvents.emit('proxyReady', id);

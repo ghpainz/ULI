@@ -103,8 +103,20 @@ function envelope(c) {
   const s = store.seq;
   const m = store.project.media[c.mediaId];
   const { start, dur } = clipSourceRange(c, s.fps);
+  return envelopeOf(m.path, start, dur);
+}
+
+// Medya dosyaları arasındaki ses kayması (sn): media'nın t anı ref'in t+offset anına denk gelir
+export async function audioOffset(refMedia, media) {
+  const envR = await envelopeOf(refMedia.path, refMedia.subStart ?? 0, (refMedia.subEnd ?? refMedia.duration) - (refMedia.subStart ?? 0));
+  const envX = await envelopeOf(media.path, media.subStart ?? 0, (media.subEnd ?? media.duration) - (media.subStart ?? 0));
+  const { lag, score } = bestLag(envR, envX, Math.min(12000, envR.length + envX.length));
+  return score < 0.05 ? null : lag * 0.005;
+}
+
+function envelopeOf(path, start, dur) {
   return new Promise((resolve, reject) => {
-    const p = childProcess.spawn(ff.ffmpeg, ['-hide_banner', '-v', 'error', '-ss', start.toFixed(3), '-t', Math.min(600, dur).toFixed(3), '-i', m.path, '-vn', '-ac', '1', '-ar', '8000', '-f', 's16le', '-'], { windowsHide: true });
+    const p = childProcess.spawn(ff.ffmpeg, ['-hide_banner', '-v', 'error', '-ss', start.toFixed(3), '-t', Math.min(600, dur).toFixed(3), '-i', path, '-vn', '-ac', '1', '-ar', '8000', '-f', 's16le', '-'], { windowsHide: true });
     const chunks = [];
     p.stdout.on('data', (d) => chunks.push(d));
     p.on('error', reject);

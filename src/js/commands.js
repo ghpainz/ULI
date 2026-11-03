@@ -4,7 +4,7 @@ import { app } from './appContext.js';
 import { t, getLang, setLang } from './i18n.js';
 import { el, uid, ipc, framesToTC, parseTC, clamp, nodePath, LABEL_COLORS, fpsToFraction } from './util.js';
 import * as E from './editing.js';
-import { createSequence, createEffect, SEQUENCE_PRESETS, sequenceDuration, clipsOnTrack, binChildren, mediaInUse } from './model.js';
+import { createSequence, createEffect, SEQUENCE_PRESETS, sequenceDuration, clipsOnTrack, binChildren, mediaInUse, mediaInOut, sourceTimeAt } from './model.js';
 import { EFFECTS, TRANSITIONS, effectDef } from './effectsDef.js';
 import { evalParam } from './keyframes.js';
 import { settings, saveSettings } from './settings.js';
@@ -13,6 +13,8 @@ import { showPanel, resetLayout, refreshTabTitles } from './ui/layout.js';
 import { importFiles, ALL_EXT, createProxy, deleteProxy, rt, mediaEvents } from './media.js';
 import * as IO from './projectIO.js';
 import { removeMask } from './masks.js';
+import { sceneEditDetection } from './sceneDetect.js';
+import { createMulticamDialog, toggleMulticam, switchAngle, isMulticamClip } from './multicam.js';
 import { ensureCaptions, addCaption, parseSubtitles, toSRT, toVTT } from './captions.js';
 
 const commands = new Map();
@@ -627,6 +629,48 @@ function markClip() {
   commitSeq('Mark Clip', (s2) => { s2.inFrame = c.start; s2.outFrame = c.start + c.duration; });
 }
 
+// Alt klip: kaynak monitörü in/out, proje panelinde seçili medya ya da zaman çizelgesinde seçili klibin kaynak aralığından
+export async function makeSubclip() {
+  const p = store.project;
+  let src = null, a = 0, b = 0;
+  if (focusIsSource() && app.source?.media) {
+    src = app.source.media;
+    ({ inSec: a, outSec: b } = app.source.getRange());
+  } else if (store.ui.focusedPanel === 'project') {
+    src = p.media[app.project?.selectedMediaIds()[0]];
+    if (src) ({ inSec: a, outSec: b } = mediaInOut(src));
+  } else {
+    const c = store.selectedClips().find((x) => x.kind === 'media' && p.media[x.mediaId]);
+    if (c) {
+      src = p.media[c.mediaId];
+      const fps = seq().fps;
+      const t0 = sourceTimeAt(c, c.start, fps), t1 = sourceTimeAt(c, c.start + c.duration - 1, fps);
+      a = Math.min(t0, t1); b = Math.max(t0, t1) + (Math.abs(c.speed) || 1) / fps;
+    }
+  }
+  if (!src || src.type === 'image') { toast(t('Select a video or audio clip, or set In/Out in the Source Monitor'), 'warn'); return; }
+  const root = (src.parentId && p.media[src.parentId]) || src;
+  a = Math.max(0, a); b = Math.min(root.duration || b, b);
+  if (b - a < 1 / (root.fps || 30)) return;
+  const base = src.name.replace(/\.[^.]+$/, '').replace(/\.Subclip(\.\d+)?$/, '');
+  const n = Object.values(p.media).filter((m) => m.parentId === root.id).length + 1;
+  const name = await promptDialog(t('Subclip name'), `${base}.Subclip${n > 1 ? '.' + n : ''}`, { title: t('Make Subclip') });
+  if (!name) return;
+  const id = uid('med');
+  store.commit('Make Subclip', (pr) => {
+    const r = pr.media[root.id];
+    const m = structuredClone(r);
+    Object.assign(m, {
+      id, parentId: root.id, name, subStart: a, subEnd: b, inPoint: null, outPoint: null, binId: src.binId ?? r.binId ?? null,
+      markers: (r.markers || []).filter((mk) => mk.t >= a && mk.t < b).map((mk) => ({ ...mk, id: uid('mk') })),
+    });
+    pr.media[id] = m;
+  });
+  mediaEvents.emit('update', id);
+  toast(t('Subclip created') + ': ' + name);
+  return id;
+}
+
 function frameHold() {
   const s = seq();
   const f = cur();
@@ -747,6 +791,13 @@ export function initCommands() {
     }
   }), { enabled: hasSel });
   def('clip.frameHold', 'Add Frame Hold', () => frameHold(), { enabled: hasSel });
+  def('clip.makeSubclip', 'Make Subclip...', () => makeSubclip(), { shortcut: 'Ctrl+U' });
+  def('clip.sceneDetect', 'Scene Edit Detection...', () => sceneEditDetection(), { enabled: hasSel });
+  // Çok kamera
+  def('multicam.create', 'Create Multi-Camera Source Sequence...', () => createMulticamDialog(app.project?.selectedMediaIds() || []));
+  def('multicam.enable', 'Enable Multi-Camera', () => toggleMulticam(), { enabled: () => store.selectedClips().some((c) => c.kind === 'sequence') });
+  def('multicam.view', 'Multi-Camera View', () => { store.ui.multicamView = !store.ui.multicamView; app.program?.updateButtons(); engine()?.requestRender(); }, { shortcut: 'Shift+0' });
+  for (let i = 1; i <= 9; i++) def('multicam.angle' + i, 'Switch to Camera ' + i, () => switchAngle(i - 1), { shortcut: String(i), enabled: () => !!store.ui.multicamView });
   def('clip.rename', 'Rename...', async () => {
     const c = store.selectedClips()[0];
     if (!c) return;
@@ -892,7 +943,7 @@ export function initCommands() {
 
   // İşaretçiler
   def('marker.add', 'Add Marker', () => {
-    if (focusIsSource()) return;
+    if (focusIsSource()) return app.source.addMarker();
     const f = cur();
     const s = seq();
     if (!s) return;
@@ -900,10 +951,10 @@ export function initCommands() {
     if (ex) { editMarker(ex.id); return; }
     commitSeq('Add Marker', (s2) => { s2.markers.push({ id: uid('mk'), frame: f, name: '', comment: '', color: '#4caf6a', duration: 0 }); s2.markers.sort((a, b) => a.frame - b.frame); });
   }, { shortcut: 'M' });
-  def('marker.next', 'Go to Next Marker', () => { const s = seq(); const f = cur(); const m = s.markers.find((x) => x.frame > f); if (m) engine().setFrame(m.frame); }, { shortcut: 'Shift+M', enabled: hasSeq });
-  def('marker.prev', 'Go to Previous Marker', () => { const s = seq(); const f = cur(); const m = s.markers.filter((x) => x.frame < f).pop(); if (m) engine().setFrame(m.frame); }, { shortcut: 'Ctrl+Shift+M', enabled: hasSeq });
+  def('marker.next', 'Go to Next Marker', () => { if (focusIsSource()) return app.source.nextMarker(1); const s = seq(); const f = cur(); const m = s.markers.find((x) => x.frame > f); if (m) engine().setFrame(m.frame); }, { shortcut: 'Shift+M', enabled: hasSeq });
+  def('marker.prev', 'Go to Previous Marker', () => { if (focusIsSource()) return app.source.nextMarker(-1); const s = seq(); const f = cur(); const m = s.markers.filter((x) => x.frame < f).pop(); if (m) engine().setFrame(m.frame); }, { shortcut: 'Ctrl+Shift+M', enabled: hasSeq });
   def('marker.clearCurrent', 'Clear Selected Marker', () => commitSeq('Clear Marker', (s) => { const f = cur(); s.markers = s.markers.filter((m) => m.frame !== f); }), { shortcut: 'Ctrl+Alt+M', enabled: hasSeq });
-  def('marker.clearAll', 'Clear All Markers', () => commitSeq('Clear All Markers', (s) => { s.markers = []; }), { shortcut: 'Ctrl+Alt+Shift+M', enabled: hasSeq });
+  def('marker.clearAll', 'Clear All Markers', () => focusIsSource() ? app.source.clearMarkers() : commitSeq('Clear All Markers', (s) => { s.markers = []; }), { shortcut: 'Ctrl+Alt+Shift+M', enabled: hasSeq });
   def('marker.edit', 'Edit Marker...', () => { const s = seq(); const m = s.markers.find((x) => x.frame === cur()); if (m) editMarker(m.id); }, { enabled: hasSeq });
 
   // Oynatma
@@ -1035,7 +1086,14 @@ export function menuStructure() {
       item('clip.speed'), item('clip.frameHold'), '-',
       item('clip.insert'), item('clip.overwrite'), item('clip.replaceFromSource'), '-',
       { ...item('clip.enable'), checked: () => store.selectedClips().length > 0 && store.selectedClips().every((c) => c.enabled) },
-      { ...item('clip.link'), label: t('Link / Unlink') }, item('clip.rename'), item('clip.nest'), item('clip.removeEffects'), '-',
+      { ...item('clip.link'), label: t('Link / Unlink') }, item('clip.rename'), item('clip.makeSubclip'), item('clip.nest'), item('clip.removeEffects'), '-',
+      item('clip.sceneDetect'), '-',
+      { label: t('Multi-Camera'), submenu: () => [
+        { ...item('multicam.enable'), checked: () => store.selectedClips().some((c) => isMulticamClip(c)) },
+        { ...item('multicam.view'), checked: () => !!store.ui.multicamView },
+        '-', ...[1, 2, 3, 4].map((i) => item('multicam.angle' + i)),
+      ] },
+      item('multicam.create'), '-',
       item('clip.scaleToFrame'), item('clip.setToFrame'), '-',
       { label: t('Proxy'), submenu: () => [item('clip.createProxy'), { ...item('clip.toggleProxies'), checked: () => store.ui.useProxies }] },
     ] },

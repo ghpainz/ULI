@@ -1,6 +1,6 @@
 // Bir zaman çizelgesi karesinde hangi kliplerin, hangi geçişlerle görüneceğini hesaplar.
 // Önizleme ve dışa aktarma aynı fonksiyonları kullanır.
-import { sourceTimeAt, sequenceDuration } from './model.js';
+import { sourceTimeAt, sequenceDuration, audioRemapClip, clipRateAt, multicamVideoTrack, multicamAudioTrack } from './model.js';
 import { evalParam } from './keyframes.js';
 import { audioTransitionGains } from './effectsDef.js';
 import { dbToGain } from './util.js';
@@ -62,7 +62,7 @@ function clampSrc(t, media) {
 
 const MAX_NEST = 6;
 
-function makeItem(project, seq, clip, f) {
+export function makeItem(project, seq, clip, f) {
   if (clip.kind === 'sequence') {
     const nested = project.sequences[clip.seqId] || null;
     let srcTime = 0, nf = 0;
@@ -71,7 +71,7 @@ function makeItem(project, seq, clip, f) {
       srcTime = Math.max(0, Math.min(sourceTimeAt(clip, f, seq.fps), Math.max(0, dur - 0.5 / nested.fps)));
       nf = Math.floor(srcTime * nested.fps + 1e-6);
     }
-    return { clip, media: null, nested, nestedFrame: nf, local: f - clip.start, srcTime, ownerSeq: seq, f };
+    return { clip, media: null, nested, nestedFrame: nf, onlyTrack: multicamVideoTrack(nested, clip), local: f - clip.start, srcTime, ownerSeq: seq, f };
   }
   const media = clip.mediaId ? project.media[clip.mediaId] : null;
   return {
@@ -90,7 +90,7 @@ export function flattenMediaItems(project, items, depth = 0, rateMul = 1, scaleM
   for (const it of items) {
     if (it.clip.kind === 'sequence') {
       if (!it.nested || depth >= MAX_NEST) continue;
-      const inner = itemsOfLayers(videoLayersAt(project, it.nested, it.nestedFrame, depth + 1));
+      const inner = itemsOfLayers(videoLayersAt(project, it.nested, it.nestedFrame, depth + 1, it.onlyTrack));
       const P = it.clip.props || {};
       const sc = Math.max(1, ...[P.scale?.v, ...(P.scale?.kf || []).map((k) => k.v)].filter((x) => typeof x === 'number')) / 100;
       flattenMediaItems(project, inner, depth + 1, rateMul * it.clip.speed, scaleMul * sc, out);
@@ -103,8 +103,8 @@ export function flattenMediaItems(project, items, depth = 0, rateMul = 1, scaleM
   return out;
 }
 
-// Alt izden üst ize katman listesi
-export function videoLayersAt(project, seq, f, depth = 0) {
+// Alt izden üst ize katman listesi (onlyTrack: multicam açısı için tek iz)
+export function videoLayersAt(project, seq, f, depth = 0, onlyTrack = null) {
   const layers = [];
   const nTracks = seq.tracks.video.length;
   // izlere göre grupla (tek geçiş)
@@ -120,7 +120,7 @@ export function videoLayersAt(project, seq, f, depth = 0) {
   }
   for (let t = 0; t < nTracks; t++) {
     const track = seq.tracks.video[t];
-    if (track.hidden) continue;
+    if (onlyTrack != null ? t !== onlyTrack : track.hidden) continue;
     const covering = [];
     for (const c of byTrack[t]) {
       const sp = clipSpan(seq, c);
@@ -204,21 +204,24 @@ export function clipAudioGain(clip, sp, f) {
 }
 
 // Bir anda çalan ses klipleri ve kazanç/pan değerleri (nested sekansların sesi dahil)
-export function audioStatesAt(project, seq, f, depth = 0, out = []) {
+export function audioStatesAt(project, seq, f, depth = 0, out = [], onlyTrack = null) {
   const solo = anySolo(seq);
   const master = dbToGain(seq.masterVolume || 0);
   for (const id in seq.clips) {
     const c = seq.clips[id];
     if (c.type !== 'audio' || !c.enabled || (c.kind !== 'media' && c.kind !== 'sequence')) continue;
+    if (onlyTrack != null && c.track !== onlyTrack) continue;
     if (f < c.start - 600 || f >= c.start + c.duration + 600) continue;
     const sp = clipSpan(seq, c);
     if (f < sp.from || f >= sp.to) continue;
     const track = seq.tracks.audio[c.track];
     if (!track) continue;
-    const audible = trackAudible(seq, c.track, solo);
+    const audible = onlyTrack != null || trackAudible(seq, c.track, solo);
     const g = audible ? clipAudioGain(c, sp, f) * dbToGain(track.volume || 0) * master : 0;
     const pan = Math.max(-1, Math.min(1, ((evalParam(c.props.pan, f - c.start) || 0) + (track.pan || 0)) / 100));
-    const st = sourceTimeAt(c, Math.floor(f), seq.fps) + ((f - Math.floor(f)) / seq.fps) * c.speed * (c.reverse ? -1 : 1);
+    const rc = audioRemapClip(seq, c);
+    const rate = clipRateAt(rc, f - c.start);
+    const st = sourceTimeAt(rc, Math.floor(f), seq.fps) + ((f - Math.floor(f)) / seq.fps) * rate * (c.reverse ? -1 : 1);
     if (c.kind === 'sequence') {
       const nested = project.sequences[c.seqId];
       if (!nested || depth >= MAX_NEST) continue;
@@ -226,16 +229,16 @@ export function audioStatesAt(project, seq, f, depth = 0, out = []) {
       const nf = Math.max(0, st * nested.fps);
       if (nf >= nDur) continue;
       const start = out.length;
-      audioStatesAt(project, nested, nf, depth + 1, out);
+      audioStatesAt(project, nested, nf, depth + 1, out, multicamAudioTrack(nested, c));
       for (let k = start; k < out.length; k++) {
         out[k].gain *= g;
         out[k].pan = Math.max(-1, Math.min(1, out[k].pan + pan));
-        out[k].rateMul = (out[k].rateMul || 1) * c.speed;
+        out[k].rateMul = (out[k].rateMul || 1) * rate;
       }
       continue;
     }
     const media = project.media[c.mediaId];
-    out.push({ clip: c, media, sp, gain: g, pan, rateMul: 1, srcTime: clampSrc(st, media) });
+    out.push({ clip: c, media, sp, gain: g, pan, rateMul: 1, rate, srcTime: clampSrc(st, media) });
   }
   return out;
 }

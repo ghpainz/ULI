@@ -247,6 +247,32 @@ export function nextAdjacent(seq, clip) {
 }
 
 // Kaynak süresi (saniye) bir timeline karesi için
+// Medya (veya alt klip) kaynak aralığı, saniye
+export function mediaRange(m) {
+  if (!m) return { lo: 0, hi: 0 };
+  return { lo: m.subStart ?? 0, hi: m.subEnd ?? m.duration ?? 0 };
+}
+export function mediaInOut(m) {
+  const r = mediaRange(m);
+  return { inSec: m.inPoint ?? r.lo, outSec: m.outPoint ?? r.hi };
+}
+
+// ---- Çok kameralı (multicam) ----
+// Kaynak sekans: seq.multicam = { cameras: [{ name, vTrack, aTrack }], audioMode: 'fixed' | 'follow', audioTrack }
+// Kurgudaki multicam klibi: kind 'sequence' + clip.multicam = { angle }
+export function multicamVideoTrack(nested, clip) {
+  if (!clip?.multicam || !nested?.multicam) return null;
+  const cam = nested.multicam.cameras[clip.multicam.angle];
+  return cam ? cam.vTrack : -1;
+}
+export function multicamAudioTrack(nested, clip) {
+  if (!clip?.multicam || !nested?.multicam) return null;
+  const mc = nested.multicam;
+  if (mc.audioMode !== 'follow') return mc.audioTrack ?? 0;
+  const cam = mc.cameras[clip.multicam.angle];
+  return cam && cam.aTrack >= 0 ? cam.aTrack : -1;
+}
+
 export function sourceTimeAt(clip, frame, fps) {
   const local = frame - clip.start;
   if (clip.reverse) {
@@ -260,8 +286,21 @@ export function sourceTimeAt(clip, frame, fps) {
 // props.timeRemap: hız % (keyframe'lenebilir). Kaynak zamanı = hızın zaman üzerindeki integrali.
 export function remapActive(clip) {
   const p = clip.props && clip.props.timeRemap;
-  if (!p || clip.type !== 'video' || clip.reverse || (clip.kind !== 'media' && clip.kind !== 'sequence')) return false;
+  if (!p || clip.reverse || (clip.kind !== 'media' && clip.kind !== 'sequence')) return false;
   return isAnimated(p) || Math.abs((p.v ?? 100) - 100) > 1e-6;
+}
+
+// Bağlı video klibinde hız rampası varsa ses klibi de aynı rampayı izler (aynı konum/süre/kaynak)
+export function audioRemapClip(seq, c) {
+  if (c.type !== 'audio' || !c.linkId || c.reverse) return c;
+  for (const id in seq.clips) {
+    const v = seq.clips[id];
+    if (v.type === 'video' && v.linkId === c.linkId && v.start === c.start && v.duration === c.duration
+      && Math.abs(v.speed - c.speed) < 1e-6 && Math.abs(v.inPoint - c.inPoint) < 1e-3 && remapActive(v)) {
+      return { ...c, props: { ...c.props, timeRemap: v.props.timeRemap } };
+    }
+  }
+  return c;
 }
 
 // Klibin o anki oynatma hızı çarpanı (önizleme için)

@@ -9,6 +9,7 @@ import { selectedMask, findMask } from '../masks.js';
 import * as MG from '../maskGeom.js';
 import { playbackUrl, rt, mediaEvents, mediaStatus, createProxy } from '../media.js';
 import { videoLayersAt, itemsOfLayers } from '../renderGraph.js';
+import { switchAngle } from '../multicam.js';
 import * as E from '../editing.js';
 import { settings, saveSettings } from '../settings.js';
 import { contextMenu, toast } from '../ui/dialogs.js';
@@ -28,6 +29,7 @@ const I = {
   overwrite: '<svg viewBox="0 0 16 16"><path d="M2 3h12v10H2zm2 2v6h8V5z"/><path d="M8 5.5l2.5 2.5L8 10.5z"/></svg>',
   camera: '<svg viewBox="0 0 16 16"><path d="M2 5h3l1.5-2h3L11 5h3v8H2zm6 1.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z"/></svg>',
   loop: '<svg viewBox="0 0 16 16"><path d="M4 5h7V3l3 3-3 3V7H5v2H3V6a1 1 0 011-1zM12 11H5v2l-3-3 3-3v2h6V7h2v3a1 1 0 01-1 1z"/></svg>',
+  multicam: '<svg viewBox="0 0 16 16"><path d="M1 2h6v5H1zM9 2h6v5H9zM1 9h6v5H1zM9 9h6v5H9z" opacity=".85"/></svg>',
   compare: '<svg viewBox="0 0 16 16"><path d="M1 3h6v10H1zM9 3h6v10H9z" opacity=".5"/><path d="M7.25 1.5h1.5v13h-1.5z"/></svg>',
   safe: '<svg viewBox="0 0 16 16"><path d="M1 3h14v10H1zm1.5 1.5v7h11v-7zM4 6h8v4H4z" fill-rule="evenodd"/></svg>',
   proxy: '<svg viewBox="0 0 16 16"><path d="M2 2h8l4 4v8H2zm2 2v8h8V7H9V4z"/><path d="M5 9h6v1.5H5z"/></svg>',
@@ -155,6 +157,9 @@ export class ProgramMonitor {
       el('div', { class: 'overlay-msg', style: { left: '12px', top: '10px', color: '#ddd' }, text: t('Before') }),
       el('div', { class: 'overlay-msg', style: { left: 'auto', right: '12px', top: '10px', color: '#ddd' }, text: t('After') }));
     this.view.appendChild(this.cmpLabels);
+    this.mcBtn = iconBtn(I.multicam, t('Multi-Camera View') + ' (Shift+0)', C('multicam.view'));
+    this.mcLayer = el('div', { style: { position: 'absolute', inset: '0', pointerEvents: 'none' } });
+    this.view.appendChild(this.mcLayer);
     const grow = el('div', { class: 'grow' },
       iconBtn(I.markIn, t('Mark In') + ' (I)', C('mark.in')),
       iconBtn(I.markOut, t('Mark Out') + ' (O)', C('mark.out')),
@@ -166,7 +171,7 @@ export class ProgramMonitor {
       iconBtn(I.lift, t('Lift') + ' (;)', C('sequence.lift')),
       iconBtn(I.extract, t('Extract') + " (')", C('sequence.extract')),
       iconBtn(I.camera, t('Export Frame') + ' (Ctrl+Shift+E)', C('file.exportFrame')),
-      this.loopBtn, this.safeBtn, this.proxyBtn, this.compareBtn,
+      this.loopBtn, this.safeBtn, this.proxyBtn, this.compareBtn, this.mcBtn,
     );
     this.dur = el('div', { class: 'tc dur', title: t('Sequence duration') });
     bar.append(this.tc, this.zoomSel, grow, this.resSel, this.dur);
@@ -194,6 +199,7 @@ export class ProgramMonitor {
     this.safeBtn?.classList.toggle('active', !!this.showSafe);
     this.proxyBtn?.classList.toggle('active', !!store.ui.useProxies);
     this.compareBtn?.classList.toggle('active', !!store.ui.compare);
+    this.mcBtn?.classList.toggle('active', !!store.ui.multicamView);
     if (this.cmpLabels) this.cmpLabels.style.display = store.ui.compare ? 'block' : 'none';
   }
 
@@ -272,6 +278,32 @@ export class ProgramMonitor {
     return { pts, pos, sc, scw, rot };
   }
 
+  // Multicam ızgarası: açı etiketleri, etkin açı çerçevesi (oynarken kırmızı), tıklayınca açı değiştir
+  _drawMulticam(r) {
+    const g = app.engine?.multicam;
+    this.mcLayer.innerHTML = '';
+    if (!g || !r || !store.seq) return false;
+    const s = store.seq;
+    const k = r.w / s.width;
+    const active = g.clip.multicam.angle;
+    const live = app.engine.playing;
+    g.cells.forEach((cell, i) => {
+      const on = i === active;
+      const box = el('div', { style: {
+        position: 'absolute', left: r.x + cell.x * k + 'px', top: r.y + cell.y * k + 'px', width: cell.w * k + 'px', height: cell.h * k + 'px',
+        boxSizing: 'border-box', border: on ? `3px solid ${live ? '#e04848' : '#e8c547'}` : '1px solid rgba(255,255,255,0.15)', pointerEvents: 'auto', cursor: 'pointer',
+      } }, el('div', { text: `${i + 1}  ${g.nested.multicam.cameras[i]?.name || ''}`, style: {
+        position: 'absolute', left: '4px', top: '3px', fontSize: '11px', padding: '1px 5px', borderRadius: '3px', background: 'rgba(0,0,0,0.6)', color: on ? '#ffe680' : '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: 'calc(100% - 12px)',
+      } }));
+      box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); switchAngle(i); });
+      this.mcLayer.appendChild(box);
+    });
+    const pg = g.program;
+    this.mcLayer.appendChild(el('div', { style: { position: 'absolute', left: r.x + pg.x * k + 'px', top: r.y + pg.y * k + 'px', width: pg.w * k + 'px', height: pg.h * k + 'px', boxSizing: 'border-box', border: '1px solid rgba(255,255,255,0.25)' } },
+      el('div', { text: t('Program'), style: { position: 'absolute', left: '4px', top: '3px', fontSize: '11px', padding: '1px 5px', borderRadius: '3px', background: 'rgba(0,0,0,0.6)', color: '#ddd' } })));
+    return true;
+  }
+
   updateOverlay() {
     const s = store.seq;
     // güvenli kenarlar
@@ -282,6 +314,7 @@ export class ProgramMonitor {
         this.safe.appendChild(el('div', { class: 'safe-margins', style: { left: r.x + (r.w * (1 - k)) / 2 + 'px', top: r.y + (r.h * (1 - k)) / 2 + 'px', width: r.w * k + 'px', height: r.h * k + 'px' } }));
       }
     }
+    if (this._drawMulticam(r)) { this.tbox.style.display = 'none'; return; }
     const maskShown = this._drawMaskOverlay();
     const c = s && !app.engine.playing && !maskShown ? this._selectedVideoClip() : null;
     if (!c || !r) { this.tbox.style.display = 'none'; return; }
@@ -754,11 +787,14 @@ export class SourceMonitor {
   }
   get media() { return this.mediaId ? store.project.media[this.mediaId] : null; }
   get fps() { return this.media?.fps || 30; }
+  // alt klipte kaynak aralığı: [off, end] saniye
+  get off() { return this.media?.subStart ?? 0; }
+  get end() { const m = this.media; return m ? (m.subEnd ?? m.duration ?? 0) : 0; }
   get total() {
     const m = this.media;
     if (!m) return 0;
     if (m.type === 'image') return Math.round((settings.stillDuration || 5) * 30);
-    return Math.max(1, Math.floor((m.duration || 0) * this.fps));
+    return Math.max(1, Math.floor((this.end - this.off) * this.fps));
   }
   get currentFrame() { return this.frame; }
 
@@ -783,7 +819,8 @@ export class SourceMonitor {
     this.mini = new MiniBar(mon, () => {
       const m = this.media;
       if (!m) return null;
-      return { total: this.total, frame: this.frame, inF: m.inPoint != null ? Math.round(m.inPoint * this.fps) : null, outF: m.outPoint != null ? Math.round(m.outPoint * this.fps) : null };
+      const rel = (sec) => Math.round((sec - this.off) * this.fps);
+      return { total: this.total, frame: this.frame, inF: m.inPoint != null ? rel(m.inPoint) : null, outF: m.outPoint != null ? rel(m.outPoint) : null, markers: (m.markers || []).map((mk) => ({ frame: rel(mk.t), color: mk.color })) };
     }, (f) => { this.pause(); this.setFrame(f); });
     const bar = el('div', { class: 'monitor-bar' });
     this.tc = el('div', { class: 'tc' });
@@ -810,7 +847,7 @@ export class SourceMonitor {
     this.video.addEventListener('timeupdate', () => { if (this.playing) this._fromVideo(); });
     this.video.addEventListener('ended', () => this.pause());
     this.video.addEventListener('seeked', () => this.mini.draw());
-    mediaEvents.on('proxyReady', (id) => { if (id === this.mediaId) this.openMedia(id, { time: this.frame / this.fps }); });
+    mediaEvents.on('proxyReady', (id) => { if (id === this.mediaId) this.openMedia(id, { time: this.off + this.frame / this.fps }); });
     store.on('project', () => { this.mediaId = null; this._show(); });
     app.source = this;
     this._upd();
@@ -888,8 +925,8 @@ export class SourceMonitor {
     store.ui.sourceMediaId = id;
     this._show();
     let t0 = opts.time;
-    if (t0 == null) t0 = m.inPoint ?? 0;
-    this.setFrame(Math.round(t0 * this.fps));
+    if (t0 == null) t0 = m.inPoint ?? this.off;
+    this.setFrame(Math.round((t0 - this.off) * this.fps));
     app.commands.showPanel('source');
   }
 
@@ -898,14 +935,15 @@ export class SourceMonitor {
     if (!m) return;
     this.frame = clamp(Math.round(f), 0, Math.max(0, this.total - 1));
     if (m.type !== 'image' && this.video.src) {
-      const tt = (this.frame + 0.5) / this.fps;
+      const tt = this.off + (this.frame + 0.5) / this.fps;
       try { this.video.currentTime = tt; } catch (e) { /* */ }
     }
     this._upd();
   }
 
   _fromVideo() {
-    this.frame = Math.floor(this.video.currentTime * this.fps);
+    this.frame = Math.max(0, Math.floor((this.video.currentTime - this.off) * this.fps));
+    if (this.playing && this.rate > 0 && this.media?.subEnd != null && this.video.currentTime >= this.end - 0.5 / this.fps) { this.pause(); return; }
     const m = this.media;
     if (m && m.outPoint != null && this.playing && this.rate > 0 && this.video.currentTime >= m.outPoint && this._playToOut) this.pause();
     this._upd();
@@ -939,7 +977,7 @@ export class SourceMonitor {
     clearInterval(this._revTimer);
     try { this.video.pause(); } catch (e) { /* */ }
     if (this.playBtn) this.playBtn.innerHTML = I.play;
-    if (this.media && this.media.type !== 'image' && this.video.src) this.frame = Math.round(this.video.currentTime * this.fps - 0.5);
+    if (this.media && this.media.type !== 'image' && this.video.src) this.frame = clamp(Math.round((this.video.currentTime - this.off) * this.fps - 0.5), 0, Math.max(0, this.total - 1));
     this._upd();
   }
   toggle() { if (this.playing) this.pause(); else this.play(1); }
@@ -955,7 +993,7 @@ export class SourceMonitor {
   markIn() {
     const m = this.media;
     if (!m) return;
-    m.inPoint = this.frame / this.fps;
+    m.inPoint = this.off + this.frame / this.fps;
     if (m.outPoint != null && m.outPoint <= m.inPoint) m.outPoint = null;
     store.markDirty();
     this._upd();
@@ -963,7 +1001,7 @@ export class SourceMonitor {
   markOut() {
     const m = this.media;
     if (!m) return;
-    m.outPoint = (this.frame + 1) / this.fps;
+    m.outPoint = this.off + (this.frame + 1) / this.fps;
     if (m.inPoint != null && m.inPoint >= m.outPoint) m.inPoint = null;
     store.markDirty();
     this._upd();
@@ -975,13 +1013,41 @@ export class SourceMonitor {
     store.markDirty();
     this._upd();
   }
-  goIn() { const m = this.media; if (m) this.setFrame(Math.round((m.inPoint ?? 0) * this.fps)); }
-  goOut() { const m = this.media; if (m) this.setFrame(m.outPoint != null ? Math.round(m.outPoint * this.fps) - 1 : this.total - 1); }
+  goIn() { const m = this.media; if (m) this.setFrame(Math.round(((m.inPoint ?? this.off) - this.off) * this.fps)); }
+  goOut() { const m = this.media; if (m) this.setFrame(m.outPoint != null ? Math.round((m.outPoint - this.off) * this.fps) - 1 : this.total - 1); }
+
+  // Kaynak medyaya işaretçi (klip işaretçisi): zaman çizelgesindeki kliplerde de görünür
+  addMarker() {
+    const m = this.media;
+    if (!m) return;
+    const tm = this.off + this.frame / this.fps;
+    store.commit('Add Clip Marker', (p) => {
+      const mm = p.media[m.id];
+      if (!mm) return false;
+      mm.markers = (mm.markers || []).filter((x) => Math.abs(x.t - tm) > 0.5 / this.fps);
+      mm.markers.push({ id: 'mk_' + Date.now().toString(36), t: tm, name: '', color: '#e3a42c' });
+      mm.markers.sort((a, b) => a.t - b.t);
+    });
+    this._upd();
+  }
+  clearMarkers() {
+    const m = this.media;
+    if (!m || !m.markers?.length) return;
+    store.commit('Clear Clip Markers', (p) => { p.media[m.id].markers = []; });
+    this._upd();
+  }
+  nextMarker(dir = 1) {
+    const m = this.media;
+    if (!m || !m.markers?.length) return;
+    const cur = this.off + this.frame / this.fps;
+    const list = dir > 0 ? m.markers.filter((x) => x.t > cur + 1e-4) : m.markers.filter((x) => x.t < cur - 1e-4).reverse();
+    if (list[0]) { this.pause(); this.setFrame(Math.round((list[0].t - this.off) * this.fps)); }
+  }
 
   getRange() {
     const m = this.media;
     if (!m) return { inSec: 0, outSec: 0 };
     const dur = m.type === 'image' ? (settings.stillDuration || 5) : m.duration || 0;
-    return { inSec: m.inPoint ?? 0, outSec: m.outPoint ?? dur };
+    return { inSec: m.inPoint ?? this.off, outSec: m.outPoint ?? (m.type === 'image' ? dur : this.end) };
   }
 }

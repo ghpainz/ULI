@@ -7,7 +7,7 @@ import { Compositor } from './compositor.js';
 import { videoLayersAt, itemsOfLayers, clipSpan, clipAudioGain, trackAudible, anySolo, flattenMediaItems } from './renderGraph.js';
 import { audioFxFilters } from './effectsDef.js';
 import { needsNoiseFloor, ensureNoiseFloor } from './audioTools.js';
-import { sourceTimeAt, sequenceDuration, remapActive } from './model.js';
+import { sourceTimeAt, sequenceDuration, remapActive, audioRemapClip, remapIntegral, multicamAudioTrack } from './model.js';
 import { evalParam } from './keyframes.js';
 import { rt, loadImage } from './media.js';
 import { childProcess, nodeFs, nodePath, nodeOs, fpsToFraction, dbToGain, uid, ensureDir, sleep } from './util.js';
@@ -133,7 +133,47 @@ function createReader(clip, media, seq, from, to, renderScale) {
 }
 
 // ---- Ses karıştırma ----
-async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, signal, procs, depth = 0 }) {
+// Kaynak örneklerini (srcStart'tan itibaren) zaman çizelgesi örneklerine eşle: hız rampalı ses
+async function remapAudioFile(rc, file, srcStart, a, b, fps, sr, realtimeFx, procs) {
+  const buf = nodeFs.readFileSync(file);
+  const src = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
+  const nSrc = src.length / 2;
+  const N = Math.max(0, Math.round(((b - a) / fps) * sr));
+  const out = new Float32Array(N * 2);
+  const p = rc.props.timeRemap;
+  const srcAt = (j) => rc.inPoint + (remapIntegral(p, a - rc.start + (j / sr) * fps) / fps) * rc.speed;
+  const STEP = 64;
+  let tA = srcAt(0);
+  for (let k = 0; k < N; k += STEP) {
+    const e = Math.min(N, k + STEP);
+    const tB = srcAt(e);
+    for (let j = k; j < e; j++) {
+      const tm = tA + ((tB - tA) * (j - k)) / (e - k);
+      const pos = (tm - srcStart) * sr;
+      const i0 = Math.floor(pos);
+      if (i0 < 0 || i0 + 1 >= nSrc) continue;
+      const fr = pos - i0;
+      out[j * 2] = src[i0 * 2] * (1 - fr) + src[i0 * 2 + 2] * fr;
+      out[j * 2 + 1] = src[i0 * 2 + 1] * (1 - fr) + src[i0 * 2 + 3] * fr;
+    }
+    tA = tB;
+  }
+  if (!realtimeFx.length) { nodeFs.writeFileSync(file, Buffer.from(out.buffer)); return; }
+  const tmp = file + '.tl';
+  nodeFs.writeFileSync(tmp, Buffer.from(out.buffer));
+  const args = ['-hide_banner', '-v', 'error', '-y', '-f', 'f32le', '-ar', String(sr), '-ac', '2', '-i', tmp, '-af', realtimeFx.join(','), '-ac', '2', '-ar', String(sr), '-f', 'f32le', file];
+  await new Promise((resolve, reject) => {
+    const pr = childProcess.spawn(ff.ffmpeg, args, { windowsHide: true });
+    procs.add(pr);
+    let err = '';
+    pr.stderr.on('data', (d) => (err += d));
+    pr.on('close', (code) => { procs.delete(pr); code === 0 ? resolve() : reject(new Error(err.slice(-400))); });
+    pr.on('error', reject);
+  });
+  try { nodeFs.unlinkSync(tmp); } catch (e) { /* */ }
+}
+
+async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, signal, procs, depth = 0, onlyTrack = null }) {
   const fps = seq.fps;
   const tmpDir = nodePath.dirname(outFile);
   const totalSamples = Math.max(0, Math.round(((f1 - f0) / fps) * sr));
@@ -143,6 +183,7 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
     const c = seq.clips[id];
     if (c.type !== 'audio' || !c.enabled || (c.kind !== 'media' && c.kind !== 'sequence')) continue;
     if (c.speed < 0.01) continue;
+    if (onlyTrack != null && c.track !== onlyTrack) continue;
     let m;
     if (c.kind === 'sequence') {
       const ns = project.sequences[c.seqId];
@@ -152,7 +193,7 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
       m = project.media[c.mediaId];
       if (!m || !m.hasAudio) continue;
     }
-    if (!trackAudible(seq, c.track, solo)) continue;
+    if (onlyTrack == null && !trackAudible(seq, c.track, solo)) continue;
     const sp = clipSpan(seq, c);
     const a = Math.max(sp.from, f0), b = Math.min(sp.to, f1);
     if (b <= a) continue;
@@ -164,8 +205,15 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
     if (signal.aborted) throw new Error('cancelled');
     const { c, m, a, b } = x;
     const file = nodePath.join(tmpDir, 'a_' + c.id + '.f32');
+    const rc = audioRemapClip(seq, c);
+    const remap = remapActive(rc);
     let srcStart, srcDur, lead = 0;
-    if (!c.reverse) {
+    if (remap) {
+      // hız rampası: kaynak penceresini hızlandırmadan çöz, sonra zaman eşlemesiyle yeniden örnekle
+      const sA = sourceTimeAt(rc, a, fps), sB = sourceTimeAt(rc, b, fps);
+      srcStart = Math.max(0, sA - 0.05);
+      srcDur = sB - srcStart + 0.1;
+    } else if (!c.reverse) {
       const sA = sourceTimeAt(c, a, fps);
       srcStart = Math.max(0, sA);
       lead = (srcStart - sA) / c.speed; // zaman çizelgesi saniyesi
@@ -180,8 +228,10 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
     const af = [];
     af.push(...audioFxFilters(c.effects, 'offline'));
     if (c.reverse) af.push('areverse');
-    af.push(...atempoChain(c.speed));
-    af.push(...audioFxFilters(c.effects, 'realtime'));
+    if (!remap) {
+      af.push(...atempoChain(c.speed));
+      af.push(...audioFxFilters(c.effects, 'realtime'));
+    }
     af.push(`aresample=${sr}`);
     let input = ['-ss', srcStart.toFixed(6), '-t', srcDur.toFixed(6), '-i', m.path];
     let nestedFile = null;
@@ -191,7 +241,7 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
       const n0 = Math.max(0, Math.floor(srcStart * ns.fps));
       const n1 = Math.max(n0 + 1, Math.ceil((srcStart + srcDur) * ns.fps) + 1);
       nestedFile = nodePath.join(tmpDir, 'n_' + c.id + '_' + depth + '.f32');
-      await renderAudio(project, ns, n0, n1, sr, nestedFile, { signal, procs, depth: depth + 1 });
+      await renderAudio(project, ns, n0, n1, sr, nestedFile, { signal, procs, depth: depth + 1, onlyTrack: multicamAudioTrack(ns, c) });
       input = ['-f', 'f32le', '-ar', String(sr), '-ac', '2', '-ss', Math.max(0, srcStart - n0 / ns.fps).toFixed(6), '-t', srcDur.toFixed(6), '-i', nestedFile];
     }
     const args = ['-hide_banner', '-v', 'error', '-y', ...input, '-vn', '-af', af.join(','), '-ac', '2', '-ar', String(sr), '-f', 'f32le', file];
@@ -204,6 +254,7 @@ async function renderAudio(project, seq, f0, f1, sr, outFile, { onProgress, sign
       p.on('error', reject);
     });
     if (nestedFile) try { nodeFs.unlinkSync(nestedFile); } catch (e) { /* */ }
+    if (remap) await remapAudioFile(rc, file, srcStart, a, b, fps, sr, audioFxFilters(c.effects, 'realtime'), procs);
     x.file = file;
     x.fd = nodeFs.openSync(file, 'r');
     x.samples = Math.floor(nodeFs.statSync(file).size / 8);

@@ -3,7 +3,7 @@ import { store } from '../store.js';
 import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, uid, framesToTC, fmtSeconds, ipc, nodePath, LABEL_COLORS, rafThrottle, secToTC } from '../util.js';
-import { binChildren, mediaInUse, sequenceDuration, createSequence } from '../model.js';
+import { binChildren, mediaInUse, sequenceDuration, createSequence, mediaRange, mediaInOut } from '../model.js';
 import { rt, mediaEvents, importFiles, createProxy, deleteProxy, cancelProxy, relinkMedia, mediaStatus, ALL_EXT } from '../media.js';
 import { jobs } from '../ffmpeg.js';
 import { contextMenu, confirmDialog, promptDialog, alertDialog, modal, toast } from '../ui/dialogs.js';
@@ -192,8 +192,8 @@ export class ProjectPanel {
       const status = st === 'offline' ? t('Offline') : r.proxyJob ? t('Proxy') + ' ' + Math.round((r.proxyProgress || 0) * 100) + '%' : st === 'unsupported' ? t('Needs proxy') : m.proxyPath ? t('Proxy ready') : '';
       const thumb = r.thumb ? el('img', { class: 'thumb', src: r.thumb }) : el('span', { class: 'badge', style: { background: m.type === 'audio' ? '#3f9a63' : m.type === 'image' ? '#a05f9a' : '#7472c4' } });
       const tr = el('tr', { class: (sel.has('media:' + m.id) ? 'sel' : '') + (st === 'offline' ? ' offline' : '') },
-        el('td', { title: m.path }, el('div', { class: 'name-cell' }, thumb, m.label ? el('span', { class: 'badge', style: { background: LABEL_COLORS[m.label] } }) : null, el('span', { text: m.name }))),
-        el('td', { text: m.type === 'image' ? t('Still') : m.duration ? secToTC(m.duration, m.fps || 30) : '' }),
+        el('td', { title: m.path }, el('div', { class: 'name-cell' }, thumb, m.label ? el('span', { class: 'badge', style: { background: LABEL_COLORS[m.label] } }) : null, el('span', { text: (m.parentId ? '⧉ ' : '') + m.name }))),
+        el('td', { text: m.type === 'image' ? t('Still') : m.duration ? secToTC(mediaRange(m).hi - mediaRange(m).lo, m.fps || 30) : '' }),
         el('td', { text: m.fps ? Math.round(m.fps * 1000) / 1000 + ' fps' : '' }),
         el('td', { text: m.hasVideo ? m.width + '×' + m.height : '' }),
         el('td', { text: m.hasAudio ? m.sampleRate + ' Hz ' + (m.channels === 1 ? t('Mono') : m.channels === 2 ? t('Stereo') : m.channels + 'ch') : '' }),
@@ -220,7 +220,7 @@ export class ProjectPanel {
       const r = rt(m.id);
       const st = mediaStatus(m);
       const badge = st === 'offline' ? t('Offline') : r.proxyJob ? Math.round((r.proxyProgress || 0) * 100) + '%' : m.proxyPath ? 'P' : '';
-      mk('media:' + m.id, m.name, r.thumb ? { backgroundImage: `url("${r.thumb}")` } : { background: m.type === 'audio' ? '#183a26' : '#222' }, r.thumb ? null : m.type === 'audio' ? '♪' : '▶', m.type === 'image' ? '' : fmtSeconds(m.duration), badge);
+      mk('media:' + m.id, (m.parentId ? '⧉ ' : '') + m.name, r.thumb ? { backgroundImage: `url("${r.thumb}")` } : { background: m.type === 'audio' ? '#183a26' : '#222' }, r.thumb ? null : m.type === 'audio' ? '♪' : '▶', m.type === 'image' ? '' : fmtSeconds(mediaRange(m).hi - mediaRange(m).lo), badge);
     }
     this.content.appendChild(g);
   }
@@ -367,9 +367,11 @@ export class ProjectPanel {
         { label: t('New Sequence From Clip'), enabled: m.hasVideo || m.hasAudio, action: () => app.commands.newSequenceFromMedia(m, (s) => {
           store.commit('Insert', (pr) => {
             const sq = pr.sequences[s.id];
-            app.editing.placeMedia(pr, sq, m, { start: 0, vTrack: 0, aTrack: 0, mode: 'overwrite', inSec: m.inPoint ?? 0, outSec: m.outPoint ?? m.duration, settings: app.settings });
+            app.editing.placeMedia(pr, sq, m, { start: 0, vTrack: 0, aTrack: 0, mode: 'overwrite', ...mediaInOut(m), settings: app.settings });
           });
         }) },
+        { label: t('Make Subclip...'), enabled: m.type !== 'image', action: () => { store.ui.focusedPanel = 'project'; app.commands.run('clip.makeSubclip'); } },
+        { label: t('Create Multi-Camera Source Sequence...'), enabled: this.selectedMediaIds().filter((x) => p.media[x]?.hasVideo).length >= 2, action: () => app.commands.run('multicam.create') },
         '-',
         { label: t('Rename'), action: () => this.rename(key) },
         { label: t('Clear'), action: () => this.deleteSelected() },

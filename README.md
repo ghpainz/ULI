@@ -26,6 +26,10 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 - Overwrite / Insert (Ctrl ile sürükle), Alt ile çoğaltarak sürükleme, yapıştırma (snap), bağlı seçim
 - Ripple Delete, boşluk seçip silme, Lift / Extract, Add Edit, Q/W ripple kırpma, kopyala/yapıştır/araya yapıştır, özellikleri yapıştır
 - İşaretçiler, giriş/çıkış noktaları, ses dalga formları, film şeridi küçük resimleri, opaklık/ses seviyesi keyframe çizgileri
+- Alt klipler (Ctrl+U): Kaynak monitöründeki giriş/çıkıştan, Proje panelinde seçili medyadan ya da zaman çizelgesindeki klipten alt klip oluştur. Alt klip yalnız kendi aralığını gösterir ve kırpılırken bu aralığın dışına çıkmaz
+- Klip işaretçileri: Kaynak monitörü odaktayken M kaynak medyaya işaretçi ekler; işaretçiler zaman çizelgesindeki kliplerin üzerinde de görünür
+- Sahne Kesim Algılama (Klip menüsü / sağ tık): seçili kliplerin orijinal görüntüsündeki kesimleri bulur; her kesimde klibi böler, klip işaretçisi ekler ve/veya her sahne için alt klip oluşturur (hassasiyet eşiği ayarlanabilir)
+- Çok kameralı kurgu: Proje panelinde en az iki video seçip sağ tık > Çok Kameralı Kaynak Sekans Oluştur. Senkron: ses, giriş noktaları veya klip başı; ses ya sabit bir kaynaktan gelir ya da görüntüyle birlikte değişir. Program monitöründe Çok Kamera Görünümü (Shift+0) solda açıları, sağda programı gösterir; açıya tıklayın veya 1–9 tuşlarına basın: durdurulmuşken klibin açısını değiştirir, oynarken o anda keser (canlı kurgu). Herhangi bir iç içe sekans klibi Klip > Çok Kamera > Etkinleştir ile çok kameralı klibe çevrilebilir (her video izi bir kamera olur)
 
 **Efektler ve renk**
 - Hareket (konum, ölçek, döndürme, bağlantı noktası), opaklık ve 13 karışım modu — hepsi keyframe'lenebilir
@@ -38,7 +42,7 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 - Program monitöründe maske düzenleme: köşeyi sürükle, içinden sürükleyip taşı, kalemle tıkla = köşe / tıkla-sürükle = eğri noktası, tutamağı sürükle (Alt ile tutamağı kır), Alt+köşe sürükle = eğri tutamağı çek (çokgeni bezier'e çevirir), Alt+tık = köşe noktasına döndür, Ctrl+tık kenar = nokta ekle, Ctrl+tık köşe = nokta sil, Shift ile elipsi orantılı boyutlandır, Esc ile kalemi iptal et
 - Maske takibi: Maske Yolu satırındaki ◀| ◀◀ ▶▶ |▶ düğmeleriyle maskeyi bir kare ya da klip sonuna kadar ileri/geri takip et. "Konum" veya "Konum, Ölçek ve Döndürme" yöntemi; her kareye keyframe yazılır, Durdur ile yarıda kesilebilir, geri alınabilir. Takip kaybolursa maskeyi düzeltip o kareden yeniden başlatın
 - Lumetri eğrileri: Ana/Kırmızı/Yeşil/Mavi eğrileri ve Ton–Doygunluk eğrisi (tıkla = nokta, sürükle = ayarla, çift tık = sil)
-- Zaman yeniden eşleme (hız rampası): Efekt Kontrolleri > Zaman Yeniden Eşleme > Hız için keyframe ekleyin; Yavaş Giriş/Çıkış ile yumuşak rampa. Önizleme ve dışa aktarma aynı sonucu verir (yalnız video; ses etkilenmez)
+- Zaman yeniden eşleme (hız rampası): Efekt Kontrolleri > Zaman Yeniden Eşleme > Hız için keyframe ekleyin; Yavaş Giriş/Çıkış ile yumuşak rampa. Önizleme ve dışa aktarma aynı sonucu verir; bağlı ses klibi de aynı rampayı izler
 - Altyazılar: altyazı izi (C1), Altyazılar paneli (metin, zamanlama, stil), SRT/VTT içe-dışa aktarma, dışa aktarırken videoya gömme veya ayrı SRT dosyası (Ctrl+Alt+C: altyazı ekle)
 - Lumetri Kapsamları: Dalga formu (RGB/Luma), RGB Parade, Vektörskop YUV (renk hedefleri ve ten çizgisi), Histogram
 - Nested (iç içe) sekanslar: seçili klipleri Klip > İç İçe Yerleştir ile tek klibe çevir veya Proje panelinden bir sekansı zaman çizelgesine sürükle. Nested klibe hareket/opaklık/efekt/hız uygulanabilir, çift tıklayınca içine girilir, istenen derinlikte iç içe olabilir (sekans kendi içine konamaz)
@@ -72,7 +76,9 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 | Shift+Del | Ripple Delete |
 | Q / W | Ripple kırpma |
 | Ctrl+R | Hız/Süre |
-| M | İşaretçi |
+| M | İşaretçi (Kaynak monitöründe klip işaretçisi) |
+| Ctrl+U | Alt klip oluştur |
+| Shift+0 / 1–9 | Çok kamera görünümü / açı değiştir |
 | = / - / \\ | Yakınlaştır / uzaklaştır / sığdır |
 | Ctrl+Z / Ctrl+Shift+Z | Geri al / yinele |
 | ` | Paneli büyüt |
