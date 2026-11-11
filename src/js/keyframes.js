@@ -1,5 +1,7 @@
 // Keyframe değerlendirme. Param: { v, kf: [{f, v, e}] | null }  (f: klibe göre kare)
-// e: 'linear' | 'hold' | 'ease' | 'easeIn' | 'easeOut'
+// e: 'linear' | 'hold' | 'ease' | 'easeIn' | 'easeOut' | 'bezier'
+// bezier (sayısal değerler, eğri editörü): a.ho = [x (0..1, segmentin oranı), y (değer farkı)] çıkış tutamağı,
+// b.hi = [x (0..1), y (değer farkı)] giriş tutamağı. Varsayılan düz (yumuşak) tutamaklar.
 
 function ease(e, t) {
   switch (e) {
@@ -17,6 +19,23 @@ function mix(a, b, t) {
   return t < 1 ? a : b;
 }
 
+export const BEZ_DEFAULT = [1 / 3, 0];
+const cub = (p0, p1, p2, p3, t) => { const u = 1 - t; return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3; };
+// a -> b bezier segmentinde f karesindeki değer (x(t) = f çözülür)
+export function bezierValue(a, b, f) {
+  const span = b.f - a.f || 1;
+  const ho = a.ho || BEZ_DEFAULT, hi = b.hi || BEZ_DEFAULT;
+  const x1 = a.f + Math.max(0, Math.min(1, ho[0])) * span, x2 = b.f - Math.max(0, Math.min(1, hi[0])) * span;
+  let lo = 0, hiT = 1, t = (f - a.f) / span;
+  for (let i = 0; i < 40; i++) {
+    const x = cub(a.f, x1, x2, b.f, t);
+    if (Math.abs(x - f) < 1e-5) break;
+    if (x < f) lo = t; else hiT = t;
+    t = (lo + hiT) / 2;
+  }
+  return cub(a.v, a.v + ho[1], b.v + hi[1], b.v, t);
+}
+
 export function evalParam(p, f) {
   if (!p) return undefined;
   if (!p.kf || p.kf.length === 0) return p.v;
@@ -32,6 +51,10 @@ export function evalParam(p, f) {
   const a = k[lo], b = k[hi];
   const span = b.f - a.f;
   const t = span > 0 ? (f - a.f) / span : 1;
+  if (a.e === 'bezier') {
+    if (typeof a.v === 'number' && typeof b.v === 'number') return bezierValue(a, b, f);
+    return mix(a.v, b.v, ease('ease', t));
+  }
   return mix(a.v, b.v, ease(a.e || 'linear', t));
 }
 

@@ -9,6 +9,7 @@ import { captionsInRange, toSRT } from './captions.js';
 import { ff } from './ffmpeg.js';
 import { settings, saveSettings } from './settings.js';
 import { modal, alertDialog, toast, selectEl, numInput } from './ui/dialogs.js';
+import { addToQueue } from './exportQueue.js';
 
 const LAST_KEY = 'uli.exportOpts';
 
@@ -139,7 +140,11 @@ export async function openExportDialog() {
     width: 620,
     buttons: [
       { label: t('Cancel'), value: null },
-      { label: t('Export'), primary: true, onClick: () => {
+      { label: t('Add to Queue'), onClick: () => ({ ...collect(), queue: true }) },
+      { label: t('Export'), primary: true, onClick: () => collect() },
+    ],
+  });
+  function collect() {
         const f = FORMATS[fmtSel.value];
         const [a, b] = range.value === 'io' ? [seq.inFrame ?? 0, seq.outFrame ?? dur] : [0, dur];
         return {
@@ -149,9 +154,7 @@ export async function openExportDialog() {
           audioBitrate: +abr.value, audioBits: +bits.value, range: [a, b],
           burnCaptions: hasCaps ? burn.checked : undefined, sidecarSrt: hasCaps && srtCb.checked,
         };
-      } },
-    ],
-  });
+  }
   if (!opts) return;
   localStorage.setItem(LAST_KEY, JSON.stringify(opts));
   settings.lastExportDir = nodePath.dirname(opts.file);
@@ -160,6 +163,16 @@ export async function openExportDialog() {
   if (fs.existsSync(opts.file) && opts.format !== 'png_seq') {
     const r = await modal({ title: t('Export Media'), body: el('div', { text: t('File already exists. Overwrite?') + '\n' + opts.file, style: { whiteSpace: 'pre-wrap' } }), buttons: [{ label: t('Cancel'), value: false }, { label: t('Overwrite'), primary: true, value: true }] });
     if (!r) return;
+  }
+  if (opts.queue) {
+    delete opts.queue;
+    if (opts.sidecarSrt) {
+      const s2 = { ...seq, captions: captionsInRange(seq, opts.range[0], opts.range[1]) };
+      window.require('fs').writeFileSync(opts.file.replace(/\.[^.\\/]+$/, '') + '.srt', toSRT(s2, opts.range[0]), 'utf8');
+    }
+    addToQueue(seq, opts);
+    app.commands.showPanel('exportQueue');
+    return;
   }
   await runExport(seq, opts);
 }

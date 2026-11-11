@@ -457,6 +457,17 @@ export class EffectControlsPanel {
     }
     this.props.appendChild(row);
     if (p.static !== true) this.rows.push({ row, path });
+    // eğri editörü: animasyonlu sayısal parametrelerde değer grafiği
+    if (anim && typeof cur === 'number' && !opts.type) {
+      const gb = el('span', { class: 'graph-btn' + (this.graphPath === path ? ' on' : ''), title: t('Show value graph (curve editor)'), html: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 13C5 13 5 3 9 3s4 6 6 6"/></svg>' });
+      gb.addEventListener('click', (e) => { e.stopPropagation(); this.graphPath = this.graphPath === path ? null : path; this._render(); });
+      row.appendChild(gb);
+      if (this.graphPath === path) {
+        const sp = el('div', { class: 'ec-graph-space' });
+        this.props.appendChild(sp);
+        this.rows.push({ row: sp, path, graph: true });
+      }
+    }
     return row;
   }
 
@@ -738,8 +749,10 @@ export class EffectControlsPanel {
     ctx.fillRect(pad, 20, W, 4);
     const top = this.props.getBoundingClientRect().top;
     const sel = store.ui.selectedKeyframes;
+    this.graphGeo = null;
     for (const r of this.rows) {
       const rr = r.row.getBoundingClientRect();
+      if (r.graph) { this._drawGraph(ctx, c, r, rr.top - top, rr.height, w, h, pad, W, xOf); continue; }
       const y = rr.top - top + rr.height / 2;
       if (y < 24 || y > h) continue;
       const p = getParam(c, r.path);
@@ -772,6 +785,144 @@ export class EffectControlsPanel {
     }
   }
 
+  // Değer grafiği: eğri, keyframe kareleri ve bezier tutamakları
+  _drawGraph(ctx, c, r, y0, gh, w, h, pad, W, xOf) {
+    if (y0 + gh < 24 || y0 > h || gh < 20) return;
+    const p = getParam(c, r.path);
+    if (!isAnimated(p)) return;
+    const k = p.kf;
+    const top = y0 + 8, bot = y0 + gh - 8;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, Math.max(24, y0), w, gh); ctx.clip();
+    ctx.fillStyle = '#141414'; ctx.fillRect(0, y0, w, gh);
+    // değer aralığı (eğri + tutamaklar)
+    const n = Math.max(2, Math.round(W));
+    const samples = [];
+    for (let i = 0; i <= n; i++) { const f = (i / n) * (c.duration - 1); samples.push([pad + (i / n) * W, evalParam(p, f)]); }
+    let lo = Infinity, hi = -Infinity;
+    for (const [, v] of samples) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    for (let i = 0; i < k.length; i++) {
+      if (k[i].ho) { lo = Math.min(lo, k[i].v + k[i].ho[1]); hi = Math.max(hi, k[i].v + k[i].ho[1]); }
+      if (k[i].hi) { lo = Math.min(lo, k[i].v + k[i].hi[1]); hi = Math.max(hi, k[i].v + k[i].hi[1]); }
+    }
+    if (hi - lo < 1e-6) { hi += 1; lo -= 1; }
+    const m = (hi - lo) * 0.08; lo -= m; hi += m;
+    const yOf = (v) => bot - ((v - lo) / (hi - lo)) * (bot - top);
+    const vOf = (yy) => lo + ((bot - yy) / (bot - top)) * (hi - lo);
+    // ızgara ve etiketler
+    ctx.strokeStyle = '#262626'; ctx.lineWidth = 1;
+    ctx.fillStyle = '#6a6a6a'; ctx.font = '10px Consolas, monospace';
+    for (let i = 0; i <= 4; i++) {
+      const v = lo + ((hi - lo) * i) / 4, yy = Math.round(yOf(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(pad, yy); ctx.lineTo(w - pad, yy); ctx.stroke();
+      ctx.fillText((Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)), pad + 2, yy - 2);
+    }
+    // eğri
+    ctx.strokeStyle = '#f0c040'; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    samples.forEach(([x, v], i) => { const yy = yOf(v); if (i) ctx.lineTo(x, yy); else ctx.moveTo(x, yy); });
+    ctx.stroke();
+    // tutamaklar ve keyframe'ler
+    const items = [];
+    const sel = store.ui.selectedKeyframes;
+    for (let i = 0; i < k.length; i++) {
+      const a = k[i], x = xOf(a.f), yy = yOf(a.v);
+      const hnd = (type, hx, hv) => {
+        const px = xOf(hx), py = yOf(hv);
+        ctx.strokeStyle = '#8fb4ff'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(px, py); ctx.stroke();
+        ctx.fillStyle = '#8fb4ff'; ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
+        items.push({ type, idx: i, x: px, y: py });
+      };
+      if (i < k.length - 1 && a.e === 'bezier') { const ho = a.ho || [1 / 3, 0]; hnd('ho', a.f + ho[0] * (k[i + 1].f - a.f), a.v + ho[1]); }
+      if (i > 0 && k[i - 1].e === 'bezier') { const hi2 = a.hi || [1 / 3, 0]; hnd('hi', a.f - hi2[0] * (a.f - k[i - 1].f), a.v + hi2[1]); }
+      const isSel = sel.some((s) => s.clipId === c.id && s.path === r.path && s.f === a.f);
+      ctx.fillStyle = isSel ? '#ffffff' : '#f0c040';
+      ctx.fillRect(x - 4, yy - 4, 8, 8);
+      items.push({ type: 'kf', idx: i, x, y: yy });
+    }
+    ctx.restore();
+    this.graphGeo = { path: r.path, c, y0, gh, top, bot, xOf, yOf, vOf, pad, W, items };
+  }
+
+  // Grafikte tıklama: keyframe (zaman + değer) ya da tutamak sürükleme. İşlendiyse true
+  _graphDown(e) {
+    const G = this.graphGeo;
+    if (!G) return false;
+    const r = this.kf.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    if (y < G.y0 || y > G.y0 + G.gh) return false;
+    const it = G.items.filter((q) => Math.hypot(q.x - x, q.y - y) <= 7).sort((a, b) => (a.type === 'kf') - (b.type === 'kf'))[0];
+    const c = G.c, path = G.path;
+    if (!it) {
+      const f = clamp(Math.round(((x - G.pad) / G.W) * (c.duration - 1)), 0, c.duration - 1);
+      app.engine.setFrame(c.start + f);
+      return true;
+    }
+    const p0 = getParam(c, path);
+    const k0 = p0.kf[it.idx];
+    if (it.type === 'kf') store.ui.selectedKeyframes = [{ clipId: c.id, path, f: k0.f }];
+    const fOf = (xx) => ((xx - G.pad) / G.W) * (c.duration - 1);
+    let begun = false;
+    const x0 = e.clientX, y0 = e.clientY;
+    const mv = (ev) => {
+      if (!begun && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 3) return;
+      if (!begun) { store.begin(it.type === 'kf' ? 'Move Keyframe' : 'Bezier Handle'); begun = true; this._dragging = true; }
+      const lx = ev.clientX - r.left, ly = ev.clientY - r.top;
+      store.live((pr) => {
+        const cc = pr.sequences[pr.activeSequenceId].clips[c.id];
+        const p = getParam(cc, path);
+        const K = p.kf;
+        const i = it.idx;
+        const a = K[i];
+        if (!a) return;
+        if (it.type === 'kf') {
+          const prev = K[i - 1], next = K[i + 1];
+          let nf = Math.round(fOf(lx));
+          nf = clamp(nf, prev ? prev.f + 1 : 0, next ? next.f - 1 : c.duration - 1);
+          if (ev.shiftKey) nf = a.f; // Shift: yalnız değer
+          a.f = nf;
+          a.v = Math.round(G.vOf(ly) * 100) / 100;
+          store.ui.selectedKeyframes = [{ clipId: c.id, path, f: nf }];
+        } else if (it.type === 'ho') {
+          const b = K[i + 1];
+          const span = b.f - a.f || 1;
+          a.e = 'bezier';
+          a.ho = [clamp((fOf(lx) - a.f) / span, 0, 1), G.vOf(ly) - a.v];
+          // tutamaklar birlikte döner (Alt: bağımsız)
+          if (!ev.altKey && i > 0 && K[i - 1].e === 'bezier') {
+            const spanIn = a.f - K[i - 1].f || 1, hi0 = a.hi || [1 / 3, 0];
+            const slope = a.ho[1] / Math.max(1e-6, a.ho[0] * span);
+            a.hi = [hi0[0], -slope * hi0[0] * spanIn];
+          }
+        } else {
+          const pv = K[i - 1];
+          const span = a.f - pv.f || 1;
+          pv.e = 'bezier';
+          a.hi = [clamp((a.f - fOf(lx)) / span, 0, 1), G.vOf(ly) - a.v];
+          if (!ev.altKey && i < K.length - 1 && a.e === 'bezier') {
+            const spanOut = K[i + 1].f - a.f || 1, ho0 = a.ho || [1 / 3, 0];
+            const slope = -a.hi[1] / Math.max(1e-6, a.hi[0] * span);
+            a.ho = [ho0[0], slope * ho0[0] * spanOut];
+          }
+        }
+      });
+      app.engine.requestRender();
+      this._drawKf();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up);
+      this._dragging = false;
+      if (begun) store.end();
+      else if (it.type === 'kf') app.engine.setFrame(c.start + k0.f);
+      this._drawKf();
+    };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+    return true;
+  }
+
   _kfHit(e) {
     const c = this._liveClip();
     if (!c) return null;
@@ -791,6 +942,7 @@ export class EffectControlsPanel {
 
   _kfDown(e) {
     if (e.button !== 0) return;
+    if (this._graphDown(e)) return;
     const h = this._kfHit(e);
     if (!h) return;
     const c = h.c;
@@ -855,6 +1007,7 @@ export class EffectControlsPanel {
       { label: t('Ease In'), checked: h.k.e === 'easeIn', action: () => setE('easeIn') },
       { label: t('Ease Out'), checked: h.k.e === 'easeOut', action: () => setE('easeOut') },
       { label: t('Ease In/Out'), checked: h.k.e === 'ease', action: () => setE('ease') },
+      { label: t('Bezier (curve editor)'), checked: h.k.e === 'bezier', action: () => { setE('bezier'); this.graphPath = path; this._render(); } },
       '-',
       { label: t('Delete'), action: () => store.commit('Delete Keyframe', (pr) => { const p = getParam(pr.sequences[pr.activeSequenceId].clips[c.id], path); removeKeyframeAt(p, f); }) },
     ]);

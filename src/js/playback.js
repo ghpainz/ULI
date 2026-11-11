@@ -8,6 +8,7 @@ import { needsNoiseFloor, ensureNoiseFloor } from './audioTools.js';
 import { dbToGain } from './util.js';
 import { sequenceDuration, sourceTimeAt, clipRateAt } from './model.js';
 import { multicamGridLayers } from './multicam.js';
+import { renderAt } from './renderCache.js';
 import { playbackUrl, rt, loadImage } from './media.js';
 import { Emitter } from './util.js';
 
@@ -217,6 +218,9 @@ export class PlaybackEngine extends Emitter {
     const project = store.project;
     const f = Math.floor(this.previewFrame ?? this.frame);
     let layers = videoLayersAt(project, seq, f);
+    // önizleme render'ı: bu aralık önceden işlendiyse tek katman olarak o dosyayı göster
+    const rc = !store.ui.compare && !store.ui.multicamView && !store.ui.ignoreRenders ? renderAt(seq, f) : null;
+    if (rc) layers = [{ type: 'clip', track: 0, item: { clip: rc.clip, media: rc.media, local: f - rc.clip.start, srcTime: (f - rc.clip.start) / rc.r.fps, ownerSeq: seq, f } }];
     // multicam görünümü: açı ızgarası + program
     this.multicam = null;
     if (store.ui.multicamView) {

@@ -9,7 +9,7 @@ import { EFFECTS, TRANSITIONS, effectDef } from './effectsDef.js';
 import { evalParam } from './keyframes.js';
 import { settings, saveSettings } from './settings.js';
 import { modal, confirmDialog, promptDialog, alertDialog, toast, selectEl, numInput } from './ui/dialogs.js';
-import { showPanel, resetLayout, refreshTabTitles } from './ui/layout.js';
+import { showPanel, resetLayout, refreshTabTitles, WORKSPACES, applyWorkspace, saveWorkspaceAs, deleteWorkspace, allWorkspaces, currentWorkspace } from './ui/layout.js';
 import { importFiles, ALL_EXT, createProxy, deleteProxy, rt, mediaEvents } from './media.js';
 import * as IO from './projectIO.js';
 import { removeMask } from './masks.js';
@@ -21,7 +21,7 @@ const commands = new Map();
 const shortcutMap = new Map();
 
 function def(id, label, run, opts = {}) {
-  commands.set(id, { id, label, run, shortcut: opts.shortcut || null, alt: opts.alt || [], enabled: opts.enabled || null, global: opts.global });
+  commands.set(id, { id, label, run, shortcut: opts.shortcut || null, defaultShortcut: opts.shortcut || null, alt: opts.alt || [], enabled: opts.enabled || null, global: opts.global });
   for (const s of [opts.shortcut, ...(opts.alt || [])].filter(Boolean)) shortcutMap.set(normalizeShortcut(s), id);
 }
 
@@ -65,6 +65,46 @@ export function run(id, ...args) {
     console.error(e);
     toast(e.message, 'error');
   }
+}
+
+// ---- Kısayol özelleştirme: settings.shortcuts = { komutId: 'Ctrl+K' | '' (kaldırıldı) }
+function rebuildShortcutMap() {
+  shortcutMap.clear();
+  for (const c of commands.values()) for (const k of [c.shortcut, ...(c.alt || [])].filter(Boolean)) shortcutMap.set(normalizeShortcut(k), c.id);
+}
+export function applyShortcutOverrides() {
+  const ov = settings.shortcuts || {};
+  for (const c of commands.values()) c.shortcut = c.defaultShortcut;
+  for (const [id, key] of Object.entries(ov)) {
+    const c = commands.get(id);
+    if (!c) continue;
+    if (key) for (const o of commands.values()) if (o !== c && o.shortcut && normalizeShortcut(o.shortcut) === normalizeShortcut(key)) o.shortcut = null;
+    c.shortcut = key || null;
+    if (key) c.alt = (c.alt || []).filter((a) => normalizeShortcut(a) !== normalizeShortcut(key));
+  }
+  rebuildShortcutMap();
+}
+export function setShortcut(id, key) {
+  const c = commands.get(id);
+  if (!c) return;
+  settings.shortcuts = { ...(settings.shortcuts || {}) };
+  // aynı tuşu kullanan başka komut varsa onun kısayolu kaldırılır
+  if (key) for (const o of commands.values()) if (o !== c && o.shortcut && normalizeShortcut(o.shortcut) === normalizeShortcut(key)) settings.shortcuts[o.id] = '';
+  if ((key || null) === c.defaultShortcut) delete settings.shortcuts[id]; else settings.shortcuts[id] = key || '';
+  saveSettings();
+  applyShortcutOverrides();
+}
+export function resetShortcuts() { settings.shortcuts = {}; saveSettings(); applyShortcutOverrides(); }
+export function commandForShortcut(key) { return shortcutMap.get(normalizeShortcut(key)) || null; }
+
+// Çalışma alanı menüsü (Pencere menüsü ve üst sağdaki seçici)
+export function workspaceMenuItems() {
+  const cur = currentWorkspace();
+  const items = allWorkspaces().map(([id, w]) => ({ label: t(w.name), checked: id === cur, shortcut: shortcutOf('workspace.' + id), action: () => applyWorkspace(id) }));
+  const user = allWorkspaces().filter(([, w]) => w.user);
+  items.push('-', { label: t('Save as New Workspace...'), action: () => run('workspace.save') }, { label: t('Reset to Saved Layout'), action: () => resetLayout() });
+  if (user.length) items.push({ label: t('Delete Workspace'), submenu: user.map(([id, w]) => ({ label: w.name, action: () => deleteWorkspace(id) })) });
+  return items;
 }
 
 export function label(id) { const c = commands.get(id); return c ? t(c.label) : id; }
@@ -450,10 +490,59 @@ async function preferencesDialog() {
   app.timeline?.refresh();
 }
 
+// Kısayol düzenleyici: bir komutun kısayoluna tıkla, yeni tuş bileşimine bas (Esc iptal, Backspace kaldır)
 function shortcutsDialog() {
-  const rows = allCommands().filter((c) => c.shortcut).map((c) => el('tr', {}, el('td', { text: t(c.label) }), el('td', {}, el('span', { class: 'kbd', text: [c.shortcut, ...c.alt].join('  /  ') }))));
-  const tbl = el('table', { class: 'shortcut-table' }, ...rows);
-  modal({ title: t('Keyboard Shortcuts'), body: el('div', { style: { maxHeight: '70vh', overflow: 'auto' } }, tbl), buttons: [{ label: t('OK'), primary: true }], width: 560 });
+  const search = el('input', { type: 'text', placeholder: t('Search commands or keys'), style: { width: '100%', boxSizing: 'border-box', marginBottom: '8px' } });
+  const onlySet = el('input', { type: 'checkbox' });
+  const tbl = el('table', { class: 'shortcut-table' });
+  const info = el('div', { style: { color: 'var(--text-dim)', fontSize: '11px', minHeight: '16px', margin: '6px 0' } });
+  let recording = null;
+  const stopRec = () => { if (recording) { window.removeEventListener('keydown', recording.h, true); recording = null; } };
+  const render = () => {
+    tbl.innerHTML = '';
+    const q = search.value.trim().toLocaleLowerCase('tr');
+    const list = allCommands().filter((c) => !c.id.startsWith('multicam.angle') || c.shortcut)
+      .filter((c) => !onlySet.checked || c.shortcut)
+      .filter((c) => !q || t(c.label).toLocaleLowerCase('tr').includes(q) || (c.shortcut || '').toLowerCase().includes(q))
+      .sort((a, b) => t(a.label).localeCompare(t(b.label), 'tr'));
+    for (const c of list) {
+      const changed = (c.shortcut || null) !== (c.defaultShortcut || null);
+      const key = el('button', { class: 'kbd' + (changed ? ' changed' : ''), text: c.shortcut || '—', title: t('Click and press a new key combination') });
+      key.addEventListener('click', () => {
+        stopRec();
+        key.textContent = t('Press keys...');
+        key.classList.add('recording');
+        const h = (e) => {
+          if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+          e.preventDefault(); e.stopImmediatePropagation();
+          stopRec();
+          if (e.key === 'Escape') { render(); return; }
+          if (e.key === 'Backspace' || e.key === 'Delete') { setShortcut(c.id, ''); info.textContent = t('Shortcut removed') + ': ' + t(c.label); render(); return; }
+          const sc = eventToShortcut(e);
+          if (!sc) { render(); return; }
+          const other = commandForShortcut(sc);
+          setShortcut(c.id, sc);
+          info.textContent = other && other !== c.id ? t('{key} was used by "{cmd}"; it was moved here.', { key: sc, cmd: label(other) }) : '';
+          render();
+        };
+        recording = { h };
+        window.addEventListener('keydown', h, true);
+      });
+      const reset = el('button', { class: 'icon', text: '↺', title: t('Reset to default'), style: { visibility: changed ? 'visible' : 'hidden' } });
+      reset.addEventListener('click', () => { setShortcut(c.id, c.defaultShortcut); render(); });
+      tbl.appendChild(el('tr', {}, el('td', { text: t(c.label) }), el('td', { style: { width: '170px' } }, key, reset)));
+    }
+  };
+  search.addEventListener('input', render);
+  search.addEventListener('keydown', (e) => e.stopPropagation());
+  onlySet.addEventListener('change', render);
+  render();
+  const body = el('div', {}, search, el('label', { style: { display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px', fontSize: '12px' } }, onlySet, el('span', { text: t('Only commands with shortcuts') })),
+    el('div', { style: { maxHeight: '60vh', overflow: 'auto' } }, tbl), info);
+  modal({ title: t('Keyboard Shortcuts'), body, width: 600, onClose: stopRec, buttons: [
+    { label: t('Reset All'), onClick: async () => { if (await confirmDialog(t('Reset all keyboard shortcuts to defaults?'))) { resetShortcuts(); render(); } return false; } },
+    { label: t('OK'), primary: true },
+  ] });
 }
 
 function aboutDialog() {
@@ -889,6 +978,8 @@ export function initCommands() {
   def('clip.toggleProxies', 'Toggle Proxies', () => { store.ui.useProxies = !store.ui.useProxies; settings.useProxies = store.ui.useProxies; saveSettings(); mediaEvents.emit('proxyReady'); engine().requestRender(); toast(store.ui.useProxies ? t('Proxies enabled') : t('Proxies disabled')); });
 
   // Sekans
+  def('sequence.render', 'Render In to Out', async () => { const R = await import('./renderCache.js'); await R.renderInOut(seq()); app.timeline?._draw(); engine().requestRender(); }, { shortcut: 'Enter', enabled: hasSeq });
+  def('sequence.deleteRenders', 'Delete Render Files', async () => { const R = await import('./renderCache.js'); R.deleteRenders(seq()); app.timeline?._draw(); engine().requestRender(); toast(t('Render files deleted')); }, { enabled: hasSeq });
   def('sequence.canvas', 'Canvas / Aspect Ratio...', async () => { const Cv = await import('./canvas.js'); Cv.canvasDialog(); }, { enabled: hasSeq });
   def('sequence.settings', 'Sequence Settings...', async () => {
     const s = seq();
@@ -1042,6 +1133,7 @@ export function initCommands() {
   def('window.scopes', 'Lumetri Scopes', () => showPanel('scopes'));
   def('window.captions', 'Captions', () => showPanel('captions'));
   def('window.audioLibrary', 'Audio Library', () => showPanel('audioLibrary'));
+  def('window.exportQueue', 'Export Queue', () => showPanel('exportQueue'));
   def('audio.tts', 'Text to Speech...', () => showPanel('audioLibrary'));
   def('window.graphics', 'Essential Graphics', () => showPanel('graphics'));
   def('window.essentialSound', 'Essential Sound', () => showPanel('essentialSound'));
@@ -1088,6 +1180,8 @@ export function initCommands() {
     toast(t('Captions exported') + ': ' + nodePath.basename(r.filePath));
   }, { enabled: hasSeq });
   def('window.resetLayout', 'Reset Workspace Layout', () => resetLayout());
+  Object.keys(WORKSPACES).forEach((id, i) => def('workspace.' + id, WORKSPACES[id].name, () => applyWorkspace(id), { shortcut: 'Alt+Shift+' + (i + 1) }));
+  def('workspace.save', 'Save as New Workspace...', async () => { const n = await promptDialog(t('Workspace name'), t('My Workspace')); if (n) { saveWorkspaceAs(n); toast(t('Workspace saved') + ': ' + n); } });
   def('window.fullscreen', 'Full Screen', () => ipc.invoke('win:fullscreen'), { shortcut: 'F11' });
   def('window.maximizeFrame', 'Maximize Panel', () => app.toggleMaximize(), { shortcut: '`' });
   def('window.devtools', 'Developer Tools', () => ipc.invoke('win:devtools'), { shortcut: 'F12' });
@@ -1098,6 +1192,7 @@ export function initCommands() {
   def('help.shortcuts', 'Keyboard Shortcuts', () => shortcutsDialog(), { shortcut: 'F1' });
   def('help.about', 'About ULI Premiere', () => aboutDialog());
 
+  applyShortcutOverrides();
   app.commandsReady = true;
   return { run, editMarker };
 }
@@ -1144,6 +1239,7 @@ export function menuStructure() {
     ] },
     { label: t('Sequence'), items: () => [
       item('sequence.settings'), item('sequence.canvas'), '-',
+      item('sequence.render'), item('sequence.deleteRenders'), '-',
       item('sequence.addEdit'), item('sequence.addEditAll'), '-',
       item('sequence.videoTransition'), item('sequence.audioTransition'), '-',
       item('sequence.lift'), item('sequence.extract'), item('sequence.rippleTrimPrev'), item('sequence.rippleTrimNext'), item('sequence.closeAllGaps'), '-',
@@ -1160,7 +1256,8 @@ export function menuStructure() {
       item('marker.add'), item('marker.next'), item('marker.prev'), item('marker.edit'), item('marker.clearCurrent'), item('marker.clearAll'),
     ] },
     { label: t('Window'), items: () => [
-      item('window.project'), item('window.source'), item('window.program'), item('window.timeline'), item('window.effectControls'), item('window.effects'), item('window.lumetri'), item('window.scopes'), item('window.graphics'), item('window.essentialSound'), item('window.captions'), item('window.audioLibrary'), item('window.audioMixer'), item('window.markers'), item('window.history'), '-',
+      item('window.project'), item('window.source'), item('window.program'), item('window.timeline'), item('window.effectControls'), item('window.effects'), item('window.lumetri'), item('window.scopes'), item('window.graphics'), item('window.essentialSound'), item('window.captions'), item('window.audioLibrary'), item('window.exportQueue'), item('window.audioMixer'), item('window.markers'), item('window.history'), '-',
+      { label: t('Workspaces'), submenu: () => workspaceMenuItems() },
       item('window.maximizeFrame'), item('window.resetLayout'), item('window.fullscreen'), '-',
       item('window.toggleLang'), item('window.reload'), item('window.devtools'),
     ] },

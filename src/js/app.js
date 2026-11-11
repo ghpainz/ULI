@@ -7,9 +7,9 @@ import { loadSettings, settings, saveSettings } from './settings.js';
 import { initFF, jobs, jobList, ff } from './ffmpeg.js';
 import { Compositor } from './compositor.js';
 import { PlaybackEngine } from './playback.js';
-import { PanelGroup, initSplitters, restoreTabs, refreshTabTitles, panels, layoutEvents } from './ui/layout.js';
+import { PanelGroup, initSplitters, restoreTabs, refreshTabTitles, panels, layoutEvents, restorePlacement, allWorkspaces, currentWorkspace } from './ui/layout.js';
 import { dropdownMenu, closeMenus, isMenuOpen, alertDialog, toast, modal, confirmDialog } from './ui/dialogs.js';
-import { initCommands, initKeyboard, menuStructure, run } from './commands.js';
+import { initCommands, initKeyboard, menuStructure, run, workspaceMenuItems } from './commands.js';
 import * as IO from './projectIO.js';
 import * as E from './editing.js';
 import { mediaEvents, importFiles } from './media.js';
@@ -22,6 +22,7 @@ import { openExportDialog, exportFrameDialog } from './exportDialog.js';
 import { ScopesPanel } from './panels/scopes.js';
 import { CaptionsPanel } from './panels/captionsPanel.js';
 import { AudioLibraryPanel } from './panels/audioLibrary.js';
+import { ExportQueuePanel } from './panels/exportQueuePanel.js';
 import { GraphicsPanel } from './panels/graphicsPanel.js';
 import { EssentialSoundPanel } from './panels/essentialSound.js';
 
@@ -65,7 +66,13 @@ function buildMenubar() {
   bar.appendChild(el('div', { class: 'spacer' }));
   const lang = el('div', { class: 'menu-top', text: getLang() === 'tr' ? 'TR' : 'EN', title: t('Switch Language (TR/EN)') });
   lang.addEventListener('click', () => run('window.toggleLang'));
-  bar.appendChild(el('div', { class: 'workspace-name', text: t('Editing') }));
+  // çalışma alanı seçici (Premiere'deki üst sağ sekmeler gibi)
+  const wsBtn = el('div', { class: 'workspace-name', title: t('Workspaces') });
+  const wsLabel = () => { const w = allWorkspaces().find(([id]) => id === currentWorkspace()); wsBtn.textContent = (w ? t(w[1].name) : t('Editing')) + ' ▾'; };
+  wsLabel();
+  layoutEvents.on('workspace', wsLabel);
+  wsBtn.addEventListener('click', () => dropdownMenu(wsBtn, workspaceMenuItems()));
+  bar.appendChild(wsBtn);
   bar.appendChild(lang);
 }
 
@@ -263,8 +270,10 @@ async function boot() {
   gLB.add(new HistoryPanel());
   gLB.add(new CaptionsPanel());
   gLB.add(new AudioLibraryPanel());
+  gLB.add(new ExportQueuePanel());
   gTL.add(new TimelinePanel());
   initSplitters();
+  restorePlacement();
   restoreTabs();
   initKeyboard();
   initMasterMeter(engine);

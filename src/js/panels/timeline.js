@@ -14,6 +14,7 @@ import { settings } from '../settings.js';
 import { contextMenu, promptDialog, toast } from '../ui/dialogs.js';
 import { ensureCaptions, captionAt, sortCaptions } from '../captions.js';
 import { applyPreset, applyClipAnim } from '../presets.js';
+import { rendersFor } from '../renderCache.js';
 import { SPEED_CURVES, applySpeedCurve } from '../speedCurves.js';
 import { uid as newId } from '../util.js';
 
@@ -420,6 +421,12 @@ export class TimelinePanel {
       const a = this.frameToX(seq.inFrame ?? 0), b = this.frameToX(seq.outFrame ?? sequenceDuration(seq));
       ctx.fillStyle = 'rgba(45,140,235,0.35)';
       ctx.fillRect(a, h - 10, b - a, 10);
+    }
+    // render çubuğu: yeşil = önizleme render'ı hazır, kırmızı = render eskidi
+    for (const r of rendersFor(seq)) {
+      const a = this.frameToX(r.f0), b = this.frameToX(r.f1);
+      ctx.fillStyle = r.valid ? '#3fbf6a' : '#d9434a';
+      ctx.fillRect(a, h - 3, Math.max(1, b - a), 3);
     }
     const step = this._tickStep();
     const sub = step >= 5 ? step / 5 : step;

@@ -373,7 +373,8 @@ function audioArgs(o) {
 
 // ---- Ana dışa aktarma ----
 export async function exportSequence(seqIn, o, { onProgress, onStatus, signal }) {
-  const project = store.project;
+  // o.project: dışa aktarma kuyruğu, eklendiği andaki projenin kopyasını verir
+  const project = o.project || store.project;
   const seq = structuredClone(seqIn);
   if (o.burnCaptions === false) seq.captionsVisible = false;
   else if (o.burnCaptions === true) seq.captionsVisible = true;
@@ -396,8 +397,10 @@ export async function exportSequence(seqIn, o, { onProgress, onStatus, signal })
   const t0 = performance.now();
   try {
     // 0) otomatik gürültü tabanı gereken klipler (en dış sekans)
-    for (const id in seqIn.clips) if (needsNoiseFloor(seqIn.clips[id])) await ensureNoiseFloor(id);
-    for (const id in seq.clips) { const live = store.seq && store.seq.clips[id]; if (live) seq.clips[id].effects = structuredClone(live.effects); }
+    if (!o.project) {
+      for (const id in seqIn.clips) if (needsNoiseFloor(seqIn.clips[id])) await ensureNoiseFloor(id);
+      for (const id in seq.clips) { const live = store.seq && store.seq.clips[id]; if (live) seq.clips[id].effects = structuredClone(live.effects); }
+    }
     // 1) ses
     let audioFile = null;
     if (fmt.audio && o.audio) {

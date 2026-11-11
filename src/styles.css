@@ -347,3 +347,19 @@ button.icon.active { color: var(--accent-2); }
 .fp-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); padding: 6px 8px 2px; }
 
 .tree-row .fx-icon.anim { background: linear-gradient(135deg, #3ec6e0, #7472c4); }
+
+/* Kısayol düzenleyici */
+.shortcut-table button.kbd { min-width: 110px; font-family: var(--mono); font-size: 11px; padding: 2px 8px; text-align: center; }
+.shortcut-table button.kbd.changed { color: #ffd166; }
+.shortcut-table button.kbd.recording { background: #2d8ceb; color: #fff; }
+
+/* Panel taşıma */
+.panel-group.dock-target { outline: 2px dashed #2d8ceb; outline-offset: -2px; }
+.workspace-name { cursor: pointer; }
+.workspace-name:hover { color: var(--text); }
+
+/* Eğri editörü */
+.ec-graph-space { height: 150px; border-top: 1px solid #262626; border-bottom: 1px solid #262626; background: rgba(0,0,0,0.15); }
+.ec-row .graph-btn { margin-left: 4px; color: #777; cursor: pointer; display: inline-flex; align-items: center; padding: 2px; border-radius: 3px; }
+.ec-row .graph-btn:hover { color: #ddd; background: #2a2a2a; }
+.ec-row .graph-btn.on { color: #f0c040; }
