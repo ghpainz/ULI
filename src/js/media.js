@@ -170,6 +170,23 @@ export async function testPlayable(id) {
   return pl;
 }
 
+// Alt kliplerin kendi küçük resmi (aralığının başından); ana medyanın çalışma zamanı bilgisi paylaşılsa da resim ayrı
+const subThumbs = new Map();
+export function thumbOf(id) {
+  const m = store.project?.media?.[id];
+  if (!m) return null;
+  if (!m.parentId || !m.hasVideo || m.subStart == null) return rt(id).thumb;
+  const k = id + '@' + m.subStart;
+  if (subThumbs.has(k)) return subThumbs.get(k);
+  subThumbs.set(k, rt(id).thumb);
+  const dur = (m.subEnd ?? m.duration) - m.subStart;
+  makeThumbnail(m.path, m.key || mediaKey(m.path), m.subStart + Math.min(1, dur * 0.1)).then((p) => {
+    subThumbs.set(k, mediaUrl(p));
+    mediaEvents.emit('update', id);
+  }).catch(() => {});
+  return subThumbs.get(k);
+}
+
 const rootId = (id) => { const m = store.project.media[id]; return m?.parentId && store.project.media[m.parentId] ? m.parentId : id; };
 
 export function createProxy(id) {

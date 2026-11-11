@@ -9,6 +9,13 @@ import { buildPath2D } from './maskGeom.js';
 import { buildCurveLUT, curvesActive } from './curves.js';
 import { solve as solveStab } from './stabilize.js';
 import { renderGraphic, graphicAnimating } from './graphics.js';
+import { clipAnimState, hasClipAnim } from './clipAnim.js';
+
+// Konum/ölçek/döndürme/bağlantı noktası animasyonlu mu (hareket bulanıklığı yalnız o zaman)
+function transformAnimated(clip) {
+  const P = clip.props || {};
+  return hasClipAnim(clip) || ['position', 'scale', 'scaleWidth', 'rotation', 'anchor'].some((k) => P[k] && P[k].kf && P[k].kf.length > 1);
+}
 
 const VS = `#version 300 es
 in vec2 a_pos;
@@ -72,6 +79,8 @@ vec3 bf(vec3 b, vec3 s, int m){
 void main(){
   vec4 d = texture(u_dst, v_uv); vec4 s = texture(u_src, v_uv);
   if(u_mode==0){ o = s + d*(1.0-s.a); return; }
+  if(u_mode==13){ o = d * s.a; return; }        // stencil alpha: alttaki görüntü yalnız katmanın içinde
+  if(u_mode==14){ o = d * (1.0 - s.a); return; } // silhouette alpha: katmanın şekli delik açar
   vec3 cb = unp(d), cs = unp(s);
   vec3 B = clamp(bf(cb, cs, u_mode), 0.0, 1.0);
   vec3 rgb = s.a*(1.0-d.a)*cs + s.a*d.a*B + (1.0-s.a)*d.a*cb;
@@ -462,7 +471,7 @@ export class Compositor {
     const anim = graphicAnimating(g, local, clip.duration);
     const key = JSON.stringify(g) + '|' + this.seqW + 'x' + this.seqH + '|' + clip.duration + (anim ? '|' + local : '|static');
     if (key !== c.key) {
-      renderGraphic(c.canvas, g, local, clip.duration, this.seqW, this.seqH);
+      renderGraphic(c.canvas, g, local, clip.duration, this.seqW, this.seqH, this._fps || 30);
       c.key = key;
       c.ver++;
     }
@@ -537,6 +546,11 @@ export class Compositor {
     for (const fx of effects) {
       const def = EFFECTS[fx.type];
       if (!def) continue;
+      if (def.echo) {
+        const r = this._echo(fx, curTex, w, h, local, maskKey);
+        if (r) { if (curTemp && curTemp !== r.temp) this._releaseTemp(curTemp); curTemp = r.temp; curTex = r.tex; }
+        continue;
+      }
       let prog;
       try { prog = this._compile('fx:' + fx.type, FX_HEADER + def.shader); } catch (e) { this.onError(e); continue; }
       const masks = (fx.masks || []).filter((mk) => mk.enabled !== false);
@@ -555,6 +569,7 @@ export class Compositor {
         this._u2f('u_size', w, h);
         this._u1f('u_time', time || 0);
         this._u1f('u_srcScale', srcScale);
+        this._u1f('u_local', (local || 0) / (this._fps || 30));
         if (dir) this._u2f('u_dir', dir[0], dir[1]);
         this._setEffectUniforms(fx, def, local);
         this._draw();
@@ -583,6 +598,65 @@ export class Compositor {
       }
     }
     return { tex: curTex, temp: curTemp };
+  }
+
+  // Eko / iz: klibin efekt zincirindeki önceki karelerini saklar ve bu kareyle birleştirir.
+  // Önceki kareler oynatırken ve dışa aktarırken (sırayla işlenen karelerde) birikir.
+  _echo(fx, tex, w, h, local, clipKey) {
+    const gl = this.gl;
+    const P = (k, d) => { const p = fx.params[k]; return p ? Number(evalParam(p, local)) : d; };
+    const count = Math.max(1, Math.min(8, Math.round(P('echoCount', 4))));
+    const delay = Math.max(1, Math.min(6, Math.round(P('echoDelay', 2))));
+    const decay = Math.max(0, Math.min(1, P('echoDecay', 60) / 100));
+    const mode = Math.round(P('echoMode', 0));
+    const span = Math.min(48, count * delay);
+    if (!this._echoHist) this._echoHist = new Map();
+    const key = clipKey + ':' + fx.id;
+    let H = this._echoHist.get(key);
+    if (H && (H.w !== w || H.h !== h)) { for (const t of H.frames.values()) this._freeTarget(t); H = null; }
+    if (!H) { H = { w, h, frames: new Map(), last: 0 }; this._echoHist.set(key, H); }
+    H.last = this.frameCounter;
+    const lf = Math.round(local);
+    // bu kareyi sakla
+    let slot = H.frames.get(lf);
+    if (!slot) {
+      for (const [f, t] of H.frames) if (f < lf - span || f > lf + span) { slot = t; H.frames.delete(f); break; }
+      if (!slot) slot = this._makeTarget(w, h);
+      H.frames.set(lf, slot);
+    }
+    const copy = this._compile('copy', FS_COPY);
+    this._bindTarget(slot);
+    gl.disable(gl.BLEND);
+    this._use(copy); this._mat(FULL);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    this._u1i('u_tex', 0); this._u1f('u_opacity', 1);
+    this._draw();
+    for (const [f, t] of H.frames) if (f < lf - span - 2 || f > lf + span + 2) { this._freeTarget(t); H.frames.delete(f); }
+    // birleştir
+    const out = this._getTemp(w, h);
+    this._clear(out);
+    this._bindTarget(out);
+    this._use(copy); this._mat(FULL);
+    gl.enable(gl.BLEND);
+    const layers = [];
+    for (let k = count; k >= 1; k--) { const t = H.frames.get(lf - k * delay); if (t) layers.push([t.tex, Math.pow(decay, k)]); }
+    const draw = (tx, a) => { gl.bindTexture(gl.TEXTURE_2D, tx); this._u1f('u_opacity', a); this._draw(); };
+    gl.activeTexture(gl.TEXTURE0); this._u1i('u_tex', 0);
+    if (mode === 1) {
+      gl.blendFunc(gl.ONE, gl.ONE);
+      draw(tex, 1);
+      for (const [tx, a] of layers) draw(tx, a);
+    } else if (mode === 2) {
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      draw(tex, 1);
+      for (const [tx, a] of layers.reverse()) draw(tx, a);
+    } else {
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      for (const [tx, a] of layers) draw(tx, a);
+      draw(tex, 1);
+    }
+    gl.disable(gl.BLEND);
+    return { tex: out.tex, temp: out };
   }
 
   // Maske dokusu (önbellekli; değerler değişince yeniden çizilir)
@@ -645,13 +719,20 @@ export class Compositor {
   // Klibin dönüşüm matrisi (birim kare -> NDC)
   _transformMatrix(clip, local, sw, sh, pad = 0) {
     const P = clip.props || {};
-    const pos = evalParam(P.position, local) || [this.seqW / 2, this.seqH / 2];
+    const pos0 = evalParam(P.position, local) || [this.seqW / 2, this.seqH / 2];
     const a0 = evalParam(P.anchor, local) || (clip.anchorBottom ? [sw / 2, sh] : [sw / 2, sh / 2]);
     const anchor = [a0[0] + pad, a0[1] + pad];
     sw += pad * 2; sh += pad * 2;
-    const sc = (evalParam(P.scale, local) ?? 100) / 100;
-    const scw = P.uniformScale === false ? (evalParam(P.scaleWidth, local) ?? 100) / 100 : sc;
-    const rot = ((evalParam(P.rotation, local) || 0) * Math.PI) / 180;
+    let sc = (evalParam(P.scale, local) ?? 100) / 100;
+    let scw = P.uniformScale === false ? (evalParam(P.scaleWidth, local) ?? 100) / 100 : sc;
+    let rot = ((evalParam(P.rotation, local) || 0) * Math.PI) / 180;
+    let pos = pos0;
+    if (clip.anim) {
+      // klip animasyonu (giriş/çıkış/kombo) dönüşüme eklenir
+      const A = clipAnimState(clip, local, this._fps || 30, this.seqW, this.seqH);
+      sc *= A.s; scw *= A.s * A.sx; rot += (A.rot * Math.PI) / 180;
+      pos = [pos0[0] + A.dx, pos0[1] + A.dy];
+    }
     const cos = Math.cos(rot), sin = Math.sin(rot);
     const SW = this.seqW, SH = this.seqH;
     const f = (u, v) => {
@@ -675,7 +756,7 @@ export class Compositor {
     const clip = item.clip;
     let tex = null, sw = 0, sh = 0, texW = 0, texH = 0, entry = null;
     if (clip.kind === 'sequence') {
-      const r = item.nested ? this._renderNested(item.nested, item.nestedFrame, getSource, time, item.onlyTrack) : null;
+      const r = item.nested ? this._renderNested(item.nested, item.nestedFrame, getSource, time, item.onlyTrack, item.withCaptions) : null;
       if (!r) return false;
       tex = r.tex; sw = item.nested.width; sh = item.nested.height; texW = r.w; texH = r.h;
       this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
@@ -701,9 +782,11 @@ export class Compositor {
       texW = src.w; texH = src.h;
     }
     const local = item.local;
-    const opacity = Math.max(0, Math.min(1, (evalParam(clip.props.opacity, local) ?? 100) / 100));
+    const anim = clip.anim ? clipAnimState(clip, local, this._fps || 30, this.seqW, this.seqH) : null;
+    const opacity = Math.max(0, Math.min(1, (evalParam(clip.props.opacity, local) ?? 100) / 100)) * (anim ? Math.max(0, Math.min(1, anim.alpha)) : 1);
     if (opacity <= 0) return true;
     const effects = this.bypassFx ? [] : (clip.effects || []).filter((fx) => fx.enabled && EFFECTS[fx.type]);
+    if (anim && anim.blur > 0.3) effects.push({ id: 'anim-blur', type: 'gaussianBlur', enabled: true, params: { blurriness: { v: anim.blur, kf: null }, dimensions: { v: 0, kf: null } } });
     const masks = (clip.masks || []).filter((mk) => mk.enabled !== false);
     // klibin dışına taşan efektler (gölge, parlama, kontur...) için kenar payı (kaynak pikseli)
     let pad = 0;
@@ -758,6 +841,38 @@ export class Compositor {
     } else if (entry) {
       this._ensureMips(entry, sw * effScale < texW / 1.6 && texW > 64);
     }
+    // tuval arka planı: klip kareyi kaplamıyorsa boşluklar bulanık kopyası ya da düz renkle dolar
+    if (clip.bgFill && clip.bgFill.mode && clip.bgFill.mode !== 'none') {
+      const fx = effects.length || masks.length;
+      this._drawBgFill(clip.bgFill, useTex, fx ? sw + pad * 2 : sw, fx ? sh + pad * 2 : sh, target, local, time);
+      gl.bindTexture(gl.TEXTURE_2D, useTex);
+    }
+    const mb = clip.motionBlur;
+    if (mb && mb.enabled && (mb.shutter || 0) > 0 && transformAnimated(clip)) {
+      // hareket bulanıklığı: deklanşör aralığındaki alt-kare dönüşümlerinin ortalaması
+      const n = Math.max(2, Math.min(64, Math.round(mb.samples || 16)));
+      const span = (mb.shutter || 180) / 360;
+      const acc = this._getTemp(target.w, target.h);
+      this._clear(acc);
+      this._bindTarget(acc);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      this._use(this._compile('copy', FS_COPY));
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, useTex);
+      this._u1i('u_tex', 0);
+      this._u1f('u_opacity', opacity / n);
+      for (let i = 0; i < n; i++) {
+        const lt = local + (i / (n - 1) - 0.5) * span;
+        this._mat(this._transformMatrix(clip, lt, sw, sh, pad).m);
+        this._draw();
+      }
+      gl.disable(gl.BLEND);
+      this._overInto(target, acc.tex);
+      this._releaseTemp(acc);
+      this._releaseTemp(temp);
+      return true;
+    }
     this._bindTarget(target);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -771,6 +886,44 @@ export class Compositor {
     gl.disable(gl.BLEND);
     this._releaseTemp(temp);
     return true;
+  }
+
+  // Klibin arkasına kareyi kaplayan arka plan çiz (bulanık kopya veya renk)
+  _drawBgFill(bg, tex, bw, bh, target, local, time) {
+    const gl = this.gl;
+    const SW = this.seqW, SH = this.seqH;
+    const copy = this._compile('copy', FS_COPY);
+    let drawTex = null, temp = null, m = FULL;
+    if (bg.mode === 'color') drawTex = this._solid(bg.color || '#000000');
+    else {
+      // düşük çözünürlükte bulanıklaştır (hem hızlı hem daha yumuşak)
+      const w = Math.max(16, Math.round(this.W / 4)), h = Math.max(16, Math.round(this.H / 4));
+      const fx = { id: 'bgfill', type: 'gaussianBlur', enabled: true, params: { blurriness: { v: (bg.blur ?? 40) * 0.25, kf: null }, dimensions: { v: 0, kf: null } } };
+      const r = this._runEffects([fx], tex, w, h, 1, local, time, 'bgfill');
+      drawTex = r.tex; temp = r.temp;
+      const k = Math.max(SW / bw, SH / bh) * 1.06;
+      const f = (u, v) => { const x = SW / 2 + (u - 0.5) * bw * k, y = SH / 2 + (0.5 - v) * bh * k; return [(x / SW) * 2 - 1, 1 - (y / SH) * 2]; };
+      const p00 = f(0, 0), p10 = f(1, 0), p01 = f(0, 1);
+      m = new Float32Array([p10[0] - p00[0], p10[1] - p00[1], 0, p01[0] - p00[0], p01[1] - p00[1], 0, p00[0], p00[1], 1]);
+    }
+    this._bindTarget(target);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    this._use(copy);
+    this._mat(m);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, drawTex);
+    this._u1i('u_tex', 0);
+    this._u1f('u_opacity', 1);
+    this._draw();
+    if (bg.mode === 'blur' && (bg.dim ?? 20) > 0) {
+      this._mat(FULL);
+      gl.bindTexture(gl.TEXTURE_2D, this._solid('#000000'));
+      this._u1f('u_opacity', Math.min(1, (bg.dim ?? 20) / 100));
+      this._draw();
+    }
+    gl.disable(gl.BLEND);
+    if (temp) this._releaseTemp(temp);
   }
 
   _blendInto(acc, other, layerTex, mode) {
@@ -805,6 +958,7 @@ export class Compositor {
     this.frameCounter++;
     this.ensureSize(seq, opts.scale || 1);
     this._project = opts.project || null;
+    this._fps = seq.fps || 30;
     this._depth = 0;
     this._missing = 0;
     const acc = this._composite(layers, getSource, opts.time || 0, this.targets);
@@ -830,16 +984,17 @@ export class Compositor {
   }
 
   // Nested sekansın bir karesini çiz, sonuç dokusunu döndür
-  _renderNested(nested, frame, getSource, time, onlyTrack = null) {
+  _renderNested(nested, frame, getSource, time, onlyTrack = null, withCaptions = false) {
     if (!this._project || this._depth >= 6) return null;
-    const save = { seqW: this.seqW, seqH: this.seqH, W: this.W, H: this.H };
+    const save = { seqW: this.seqW, seqH: this.seqH, W: this.W, H: this.H, _fps: this._fps };
+    this._fps = nested.fps || this._fps;
     const W = Math.max(2, Math.round(nested.width * this.scale)), H = Math.max(2, Math.round(nested.height * this.scale));
     this._depth++;
     const T = this._levelTargets(this._depth, W, H);
     this.seqW = nested.width; this.seqH = nested.height; this.W = W; this.H = H;
     let acc = null;
     try {
-      const layers = videoLayersAt(this._project, nested, frame, this._depth, onlyTrack);
+      const layers = videoLayersAt(this._project, nested, frame, this._depth, onlyTrack, withCaptions);
       acc = this._composite(layers, getSource, time, T);
     } finally {
       Object.assign(this, save);
@@ -988,6 +1143,7 @@ export class Compositor {
     for (const [k] of this.textCache) if (!this.textures.has('text:' + k)) this.textCache.delete(k);
     for (const [k] of this.maskCache) if (!this.textures.has('mask:' + k)) this.maskCache.delete(k);
     if (this._gfxCache) for (const [k] of this._gfxCache) if (!this.textures.has('gfx:' + k)) this._gfxCache.delete(k);
+    if (this._echoHist) for (const [k, H] of this._echoHist) if (this.frameCounter - H.last > 240) { for (const t of H.frames.values()) this._freeTarget(t); this._echoHist.delete(k); }
   }
 
   invalidateLut(path) {

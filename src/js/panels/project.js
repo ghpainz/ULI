@@ -4,7 +4,7 @@ import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, uid, framesToTC, fmtSeconds, ipc, nodePath, LABEL_COLORS, rafThrottle, secToTC } from '../util.js';
 import { binChildren, mediaInUse, sequenceDuration, createSequence, mediaRange, mediaInOut } from '../model.js';
-import { rt, mediaEvents, importFiles, createProxy, deleteProxy, cancelProxy, relinkMedia, mediaStatus, ALL_EXT } from '../media.js';
+import { rt, thumbOf, mediaEvents, importFiles, createProxy, deleteProxy, cancelProxy, relinkMedia, mediaStatus, ALL_EXT } from '../media.js';
 import { jobs } from '../ffmpeg.js';
 import { contextMenu, confirmDialog, promptDialog, alertDialog, modal, toast } from '../ui/dialogs.js';
 
@@ -190,7 +190,8 @@ export class ProjectPanel {
       const r = rt(m.id);
       const st = mediaStatus(m);
       const status = st === 'offline' ? t('Offline') : r.proxyJob ? t('Proxy') + ' ' + Math.round((r.proxyProgress || 0) * 100) + '%' : st === 'unsupported' ? t('Needs proxy') : m.proxyPath ? t('Proxy ready') : '';
-      const thumb = r.thumb ? el('img', { class: 'thumb', src: r.thumb }) : el('span', { class: 'badge', style: { background: m.type === 'audio' ? '#3f9a63' : m.type === 'image' ? '#a05f9a' : '#7472c4' } });
+      const th = thumbOf(m.id);
+      const thumb = th ? el('img', { class: 'thumb', src: th }) : el('span', { class: 'badge', style: { background: m.type === 'audio' ? '#3f9a63' : m.type === 'image' ? '#a05f9a' : '#7472c4' } });
       const tr = el('tr', { class: (sel.has('media:' + m.id) ? 'sel' : '') + (st === 'offline' ? ' offline' : '') },
         el('td', { title: m.path }, el('div', { class: 'name-cell' }, thumb, m.label ? el('span', { class: 'badge', style: { background: LABEL_COLORS[m.label] } }) : null, el('span', { text: (m.parentId ? '⧉ ' : '') + m.name }))),
         el('td', { text: m.type === 'image' ? t('Still') : m.duration ? secToTC(mediaRange(m).hi - mediaRange(m).lo, m.fps || 30) : '' }),
@@ -220,7 +221,8 @@ export class ProjectPanel {
       const r = rt(m.id);
       const st = mediaStatus(m);
       const badge = st === 'offline' ? t('Offline') : r.proxyJob ? Math.round((r.proxyProgress || 0) * 100) + '%' : m.proxyPath ? 'P' : '';
-      mk('media:' + m.id, (m.parentId ? '⧉ ' : '') + m.name, r.thumb ? { backgroundImage: `url("${r.thumb}")` } : { background: m.type === 'audio' ? '#183a26' : '#222' }, r.thumb ? null : m.type === 'audio' ? '♪' : '▶', m.type === 'image' ? '' : fmtSeconds(mediaRange(m).hi - mediaRange(m).lo), badge);
+      const th = thumbOf(m.id);
+      mk('media:' + m.id, (m.parentId ? '⧉ ' : '') + m.name, th ? { backgroundImage: `url("${th}")` } : { background: m.type === 'audio' ? '#183a26' : '#222' }, th ? null : m.type === 'audio' ? '♪' : '▶', m.type === 'image' ? '' : fmtSeconds(mediaRange(m).hi - mediaRange(m).lo), badge);
     }
     this.content.appendChild(g);
   }
@@ -237,16 +239,21 @@ export class ProjectPanel {
         if (a >= 0 && b >= 0) for (let i = Math.min(a, b); i <= Math.max(a, b); i++) sel.add(this._order[i]);
       } else if (!sel.has(key)) { sel.clear(); sel.add(key); }
       this.lastClicked = key;
+      // çift tıklama elle algılanır: her tıkta liste yeniden çizildiği için tarayıcının dblclick olayı öğeye ulaşmaz
+      const now = performance.now();
+      const dbl = e.button === 0 && !e.ctrlKey && !e.shiftKey && this._lastDown?.key === key && now - this._lastDown.t < 500;
+      this._lastDown = dbl ? null : { key, t: now };
       this.render();
       if (key.startsWith('media:')) app.effectControls?.render();
+      if (dbl) this.open(key);
     });
-    node.addEventListener('dblclick', () => this.open(key));
     node.addEventListener('contextmenu', (e) => { e.preventDefault(); this._menu(e, key); });
     node.addEventListener('dragstart', (e) => {
       const sel = store.ui.selectedProjectItems;
       if (!sel.has(key)) { sel.clear(); sel.add(key); }
       const mediaIds = [...sel].filter((k) => k.startsWith('media:')).map((k) => k.slice(6));
       app.dragMedia = mediaIds;
+      app.dragTracks = null;
       app.dragSeqs = [...sel].filter((k) => k.startsWith('seq:')).map((k) => k.slice(4));
       app.dragProjectItems = [...sel];
       e.dataTransfer.setData('application/x-uli-seqs', JSON.stringify(app.dragSeqs));
@@ -370,6 +377,8 @@ export class ProjectPanel {
             app.editing.placeMedia(pr, sq, m, { start: 0, vTrack: 0, aTrack: 0, mode: 'overwrite', ...mediaInOut(m), settings: app.settings });
           });
         }) },
+        { label: t('Add Video Only to Timeline'), enabled: !!m.hasVideo, action: () => app.commands.placeSelectedMedia(this.selectedMediaIds(), 'video') },
+        { label: t('Add Audio Only to Timeline'), enabled: !!m.hasAudio && m.type !== 'image', action: () => app.commands.placeSelectedMedia(this.selectedMediaIds(), 'audio') },
         { label: t('Make Subclip...'), enabled: m.type !== 'image', action: () => { store.ui.focusedPanel = 'project'; app.commands.run('clip.makeSubclip'); } },
         { label: t('Create Multi-Camera Source Sequence...'), enabled: this.selectedMediaIds().filter((x) => p.media[x]?.hasVideo).length >= 2, action: () => app.commands.run('multicam.create') },
         '-',

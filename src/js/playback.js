@@ -73,6 +73,7 @@ export class PlaybackEngine extends Emitter {
     const seq = this.seq;
     if (!seq) return;
     f = Math.max(0, Math.round(f));
+    this.previewFrame = null;
     this.frame = f;
     seq.playhead = f;
     if (this.playing) {
@@ -85,7 +86,14 @@ export class PlaybackEngine extends Emitter {
 
   get currentFrame() { return Math.floor(this.frame); }
 
+  // Kırpma önizlemesi: oynatma kafasını taşımadan monitörde başka bir kareyi göster (null = kapat)
+  showPreviewFrame(f) {
+    this.previewFrame = f == null ? null : Math.max(0, Math.round(f));
+    this.requestRender();
+  }
+
   play(rate = 1, opts = {}) {
+    this.previewFrame = null;
     const seq = this.seq;
     if (!seq) return;
     if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -207,7 +215,7 @@ export class PlaybackEngine extends Emitter {
   _renderNow() {
     const seq = this.seq;
     const project = store.project;
-    const f = Math.floor(this.frame);
+    const f = Math.floor(this.previewFrame ?? this.frame);
     let layers = videoLayersAt(project, seq, f);
     // multicam görünümü: açı ızgarası + program
     this.multicam = null;

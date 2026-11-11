@@ -4,7 +4,7 @@ import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, framesToTC, parseTC, rafThrottle } from '../util.js';
 import { DEFAULT_CAPTION_STYLE, captionAt } from '../captions.js';
-import { FONTS } from './effectControls.js';
+import { fontPicker } from '../ui/fontPicker.js';
 
 export class CaptionsPanel {
   constructor() {
@@ -44,10 +44,7 @@ export class CaptionsPanel {
     if (!this.showStyle || !seq) return;
     const st = { ...DEFAULT_CAPTION_STYLE, ...(seq.captionStyle || {}) };
     const setSt = (k, v) => this._commit('Caption Style', (s) => { s.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(s.captionStyle || {}), [k]: v }; });
-    const font = el('input', { type: 'text', list: 'uli-fonts', style: { width: '140px' } });
-    font.value = st.font;
-    if (!document.getElementById('uli-fonts')) document.body.appendChild(el('datalist', { id: 'uli-fonts' }, ...FONTS.map((f) => el('option', { value: f }))));
-    font.addEventListener('change', () => setSt('font', font.value || 'Segoe UI'));
+    const font = fontPicker(st.font, (f) => setSt('font', f), { width: 160 });
     const num = (k, min, max) => { const i = el('input', { type: 'number', min, max, style: { width: '60px' } }); i.value = st[k]; i.addEventListener('change', () => setSt(k, +i.value)); return i; };
     const col = (k) => { const i = el('input', { type: 'color', value: st[k] }); i.addEventListener('change', () => setSt(k, i.value)); return i; };
     const chk = (k) => { const i = el('input', { type: 'checkbox' }); i.checked = !!st[k]; i.addEventListener('change', () => setSt(k, i.checked)); return i; };

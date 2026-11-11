@@ -13,6 +13,8 @@ import { TRANSITIONS } from '../effectsDef.js';
 import { settings } from '../settings.js';
 import { contextMenu, promptDialog, toast } from '../ui/dialogs.js';
 import { ensureCaptions, captionAt, sortCaptions } from '../captions.js';
+import { applyPreset, applyClipAnim } from '../presets.js';
+import { SPEED_CURVES, applySpeedCurve } from '../speedCurves.js';
 import { uid as newId } from '../util.js';
 
 const HEADER_W = 156;
@@ -353,7 +355,8 @@ export class TimelinePanel {
   }
 
   zoomBy(k, anchorX = null) {
-    const ax = anchorX ?? clamp(this.frameToX(app.engine.currentFrame), 0, this.wrap.clientWidth);
+    // Premiere gibi: fare zaman çizelgesinin üstündeyse farenin olduğu yere, değilse oynatma kafasına göre yakınlaştır
+    const ax = anchorX ?? (this.mouseX != null ? this.mouseX : clamp(this.frameToX(app.engine.currentFrame), 0, this.wrap.clientWidth));
     const f = this.xToFrame(ax);
     this.ppf = clamp(this.ppf * k, 0.002, 60);
     this.scrollX = Math.max(0, f * this.ppf - ax);
@@ -687,6 +690,14 @@ export class TimelinePanel {
     // rubber band (opaklık / ses seviyesi)
     const showBand = c.type === 'audio' ? ch >= 36 : ch >= 70;
     if (showBand && cw > 6) this._drawBand(ctx, c, x0, x1, top + headH, ch - headH);
+    // klip animasyonu göstergesi: giriş/çıkış süresi kadar açık renkli kama
+    if (c.anim && cw > 8) {
+      const wA = (d) => Math.min(cw / 2, d * seq.fps * this.ppf);
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      if (c.anim.in?.type) { const w = wA(c.anim.in.dur || 0.5); ctx.beginPath(); ctx.moveTo(x0, top + ch); ctx.lineTo(x0 + w, top + ch); ctx.lineTo(x0, top + headH); ctx.closePath(); ctx.fill(); }
+      if (c.anim.out?.type) { const w = wA(c.anim.out.dur || 0.5); ctx.beginPath(); ctx.moveTo(x1, top + ch); ctx.lineTo(x1 - w, top + ch); ctx.lineTo(x1, top + headH); ctx.closePath(); ctx.fill(); }
+      if (c.anim.combo?.type && cw > 40) { ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('∞', x1 - 12, top + headH / 2); }
+    }
     // klip (kaynak medya) işaretçileri
     if (media?.markers?.length && cw > 8) {
       const sp = Math.abs(c.speed) || 1;
@@ -882,8 +893,11 @@ export class TimelinePanel {
   _bindEvents() {
     const wrap = this.wrap;
     wrap.addEventListener('mousedown', (e) => this._onDown(e));
-    wrap.addEventListener('mousemove', (e) => { if (!this.drag) this._onHover(e); });
-    wrap.addEventListener('mouseleave', () => { this.hover = null; this._draw(); });
+    const trackMouse = (e) => { const r = this.wrap.getBoundingClientRect(); this.mouseX = clamp(e.clientX - r.left, 0, r.width); };
+    wrap.addEventListener('mousemove', (e) => { trackMouse(e); if (!this.drag) this._onHover(e); });
+    wrap.addEventListener('mouseleave', () => { this.hover = null; this.mouseX = null; this._draw(); });
+    this.rulerWrap.addEventListener('mousemove', trackMouse);
+    this.rulerWrap.addEventListener('mouseleave', () => { this.mouseX = null; });
     wrap.addEventListener('dblclick', (e) => this._onDblClick(e));
     wrap.addEventListener('contextmenu', (e) => this._onContext(e));
     wrap.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
@@ -1331,14 +1345,11 @@ export class TimelinePanel {
     const c = s.clips[clipId];
     if (!c) return;
     const f = edge === 'end' ? c.start + c.duration - 1 : c.start;
-    if (this._trimRestore == null) this._trimRestore = app.engine.currentFrame;
-    app.engine.setFrame(f);
+    // oynatma kafası yerinde kalır; monitör yalnız kırpılan kenarın karesini gösterir
+    app.engine.showPreviewFrame(f);
   }
   _endTrimPreview() {
-    if (this._trimRestore != null) {
-      app.engine.setFrame(this._trimRestore);
-      this._trimRestore = null;
-    }
+    app.engine.showPreviewFrame(null);
   }
 
   _startSlipSlide(e, x, ids, tool) {
@@ -1350,8 +1361,7 @@ export class TimelinePanel {
       if (tool === 'slip') {
         E.slipEdit(s, project, ids, d);
         const cc = s.clips[c.id];
-        if (this._trimRestore == null) this._trimRestore = app.engine.currentFrame;
-        app.engine.setFrame(cc.start);
+        app.engine.showPreviewFrame(cc.start);
       } else {
         E.slideEdit(s, project, ids, d);
       }
@@ -1565,11 +1575,17 @@ export class TimelinePanel {
         '-',
         { label: t('Enable'), checked: c.enabled, shortcut: 'Shift+E', action: () => C.run('clip.enable') },
         { label: c.linkId ? t('Unlink') : t('Link'), shortcut: 'Ctrl+L', action: () => C.run('clip.link') },
+        { label: t('Delete Audio (Keep Video)'), enabled: !!c.linkId, action: () => C.run('clip.keepVideo') },
+        { label: t('Delete Video (Keep Audio)'), enabled: !!c.linkId, action: () => C.run('clip.keepAudio') },
         '-',
         { label: t('Speed/Duration...'), shortcut: 'Ctrl+R', action: () => C.run('clip.speed') },
+        { label: t('Speed Curve'), enabled: c.type === 'video' && !!c.props.timeRemap, submenu: [...SPEED_CURVES.map(([k, n]) => ({ label: t(n), action: () => applySpeedCurve([...store.ui.selection].filter((id) => store.seq.clips[id]?.type === 'video'), k) })), '-', { label: t('Normal (reset)'), action: () => applySpeedCurve([c.id], 'none') }] },
         { label: t('Nest...'), action: () => C.run('clip.nest') },
         { label: t('Make Subclip...'), shortcut: 'Ctrl+U', action: () => C.run('clip.makeSubclip') },
         { label: t('Scene Edit Detection...'), action: () => C.run('clip.sceneDetect') },
+        { label: t('Split Screen...'), enabled: c.type === 'video', action: () => C.run('clip.splitScreen') },
+        { label: t('Detect Beats'), enabled: c.type === 'audio', action: () => C.run('audio.detectBeats') },
+        { label: t('Auto Cut to Beat...'), enabled: c.type === 'video', action: () => C.run('sequence.cutToBeat') },
         { label: t('Open Nested Sequence'), enabled: c.kind === 'sequence', action: () => app.commands.openSequence(c.seqId) },
         { label: t('Scale to Frame Size'), enabled: c.type === 'video', action: () => C.run('clip.scaleToFrame') },
         { label: t('Set to Frame Size'), enabled: c.type === 'video', action: () => C.run('clip.setToFrame') },
@@ -1721,8 +1737,9 @@ export class TimelinePanel {
       ids.forEach((id, i) => {
         const m = store.project.media[id];
         if (!m) return;
-        if (m.hasVideo) ghost.push({ type: 'video', track: tg.vTrack, start: at, duration: durs[i] });
-        if (m.hasAudio && m.type !== 'image') ghost.push({ type: 'audio', track: tg.aTrack, start: at, duration: durs[i] });
+        const dt = app.dragTracks;
+        if (m.hasVideo && (!dt || dt.video)) ghost.push({ type: 'video', track: tg.vTrack, start: at, duration: durs[i] });
+        if (m.hasAudio && m.type !== 'image' && (!dt || dt.audio)) ghost.push({ type: 'audio', track: tg.aTrack, start: at, duration: durs[i] });
         at += durs[i];
       });
       seqIds.forEach((sid, j) => {
@@ -1762,6 +1779,10 @@ export class TimelinePanel {
       if (!h || !h.clip) return;
       if (data.kind === 'effect') {
         app.commands.applyEffect([h.clip.id], data.type);
+      } else if (data.kind === 'preset') {
+        applyPreset([h.clip.id], data.type);
+      } else if (data.kind === 'anim') {
+        applyClipAnim([h.clip.id], data.type);
       } else if (data.kind === 'transition') {
         const c = h.clip;
         const mid = c.start + c.duration / 2;
@@ -1790,11 +1811,13 @@ export class TimelinePanel {
     const tg = this._dropTarget(x, y);
     let at = frame != null ? frame : tg.frame;
     const placed = [];
+    const dt = app.dragTracks;
+    app.dragTracks = null;
     store.commit(insert ? 'Insert' : 'Overwrite', (p) => {
       const seq = p.sequences[p.activeSequenceId];
       for (const m of medias) {
         const ids2 = E.placeMedia(p, seq, m, {
-          start: at, vTrack: tg.vTrack, aTrack: tg.aTrack, mode: insert ? 'insert' : 'overwrite',
+          start: at, vTrack: !dt || dt.video ? tg.vTrack : null, aTrack: !dt || dt.audio ? tg.aTrack : null, mode: insert ? 'insert' : 'overwrite',
           ...mediaInOut(m), settings,
         });
         placed.push(...ids2);

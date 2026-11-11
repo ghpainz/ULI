@@ -104,7 +104,7 @@ export function flattenMediaItems(project, items, depth = 0, rateMul = 1, scaleM
 }
 
 // Alt izden üst ize katman listesi (onlyTrack: multicam açısı için tek iz)
-export function videoLayersAt(project, seq, f, depth = 0, onlyTrack = null) {
+export function videoLayersAt(project, seq, f, depth = 0, onlyTrack = null, withCaptions = false) {
   const layers = [];
   const nTracks = seq.tracks.video.length;
   // izlere göre grupla (tek geçiş)
@@ -156,7 +156,7 @@ export function videoLayersAt(project, seq, f, depth = 0, onlyTrack = null) {
     }
   }
   // altyazılar en üstte (yalnız en dış sekansta)
-  if (depth === 0 && seq.captions && seq.captions.length && seq.captionsVisible !== false) {
+  if ((depth === 0 || withCaptions) && seq.captions && seq.captions.length && seq.captionsVisible !== false) {
     const cap = captionAt(seq, f);
     if (cap && cap.text) layers.push({ type: 'clip', track: nTracks, item: { clip: captionClip(seq, cap), media: null, local: f - cap.start, srcTime: 0, ownerSeq: seq, f } });
   }

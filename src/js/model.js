@@ -109,7 +109,7 @@ export function defaultTextData() {
     text: 'Yeni Metin',
     font: 'Segoe UI',
     size: 96,
-    bold: true,
+    bold: false,
     italic: false,
     align: 'center',
     color: '#ffffff',

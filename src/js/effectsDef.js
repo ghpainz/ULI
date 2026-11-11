@@ -1,4 +1,6 @@
 // Video efektleri ve geçiş tanımları (GLSL ES 3.0 shader'ları ile)
+import { EXTRA_EFFECTS } from './effectsPack.js';
+import { EXTRA_TRANSITIONS } from './transitionsPack.js';
 
 export const FX_HEADER = `#version 300 es
 precision highp float;
@@ -25,6 +27,15 @@ vec3 rgb2hsv(vec3 c) {
   return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
 }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+uniform float u_local;
+vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 17.13)); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * vn(p); p = p * 2.03 + 11.7; a *= 0.5; } return v / 0.9375; }
+vec4 samp(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_tex, uv); }
+vec2 asp2() { return vec2(u_size.x / u_size.y, 1.0); }
+mat2 rot2(float a) { return mat2(cos(a), -sin(a), sin(a), cos(a)); }
+vec3 screen3(vec3 a, vec3 b) { return 1.0 - (1.0 - a) * (1.0 - b); }
 `;
 
 const LUMETRI_SHADER = `
@@ -565,6 +576,8 @@ void main(){ vec2 uv=v_uv; int m=int(u_mirrorMode+0.5);
 
 // Ses efektleri: önizlemede Web Audio düğümleri, dışa aktarmada FFmpeg filtreleri (bkz. audioFxFilters)
 // Parametreler animasyonsuz (FFmpeg tarafında sabit filtre).
+Object.assign(EFFECTS, EXTRA_EFFECTS);
+
 export const AUDIO_EFFECTS = {
   gain: {
     name: 'Amplify', group: 'Amplitude and Compression', category: 'audio',
@@ -639,13 +652,21 @@ export const AUDIO_EFFECTS = {
       { key: 'essTone', label: 'Tone', min: 0, max: 100, step: 1, default: 50, animatable: false, suffix: ' %' },
     ],
   },
+  voiceChanger: {
+    name: 'Voice Changer', group: 'Special', category: 'audio', offline: true,
+    params: [
+      { key: 'vcPreset', label: 'Voice', type: 'select', options: ['Custom Pitch', 'Chipmunk', 'Helium', 'Deep Voice', 'Monster', 'Robot', 'Whisper', 'Telephone', 'Radio', 'Megaphone', 'Cave Echo'], default: 1, animatable: false },
+      { key: 'vcPitch', label: 'Pitch (semitones)', min: -12, max: 12, step: 0.5, default: 0, animatable: false },
+      { key: 'vcFormant', label: 'Preserve Formants', type: 'bool', default: false, animatable: false },
+    ],
+  },
   channel: {
     name: 'Channel', group: 'Channels', category: 'audio',
     params: [{ key: 'mode', label: 'Mode', type: 'select', options: ['Fill Left with Right', 'Fill Right with Left', 'Swap Channels', 'Mono'], default: 3, animatable: false }],
   },
 };
 
-export const AUDIO_EFFECT_GROUPS = ['Amplitude and Compression', 'Filter and EQ', 'Delay and Echo', 'Reverb', 'Noise Reduction / Restoration', 'Channels'];
+export const AUDIO_EFFECT_GROUPS = ['Amplitude and Compression', 'Filter and EQ', 'Delay and Echo', 'Reverb', 'Noise Reduction / Restoration', 'Special', 'Channels'];
 
 // Reverb tap'leri (oda boyutuna göre ms) — önizleme ve dışa aktarma aynı tap'leri kullanır
 export function reverbTaps(roomSize, decay, mix) {
@@ -678,6 +699,25 @@ function fxVal(fx, key) {
 
 // Dışa aktarma için FFmpeg -af parçaları
 // stage: 'offline' (önce, kaynak hızında) | 'realtime' (hız/ters çevirmeden sonra) | undefined (hepsi)
+// Ses değiştirici: ön ayara göre ffmpeg filtre zinciri (rubberband ile perde kaydırma)
+function voiceFilters(preset, semis, keepFormant) {
+  const pitch = (st, formant = 'shifted') => `rubberband=pitch=${Math.pow(2, st / 12).toFixed(5)}:formant=${formant}`;
+  switch (preset) {
+    case 0: return Math.abs(semis) > 0.01 ? [pitch(semis, keepFormant ? 'preserved' : 'shifted')] : [];
+    case 1: return [pitch(7)];
+    case 2: return [pitch(11), 'highpass=f=200'];
+    case 3: return [pitch(-5)];
+    case 4: return [pitch(-9), 'lowpass=f=3500', 'acrusher=bits=10:mix=0.25:mode=log', 'volume=2dB'];
+    case 5: return ["afftfilt=real='hypot(re,im)':imag='0':win_size=512:overlap=0.75", 'volume=-2dB'];
+    case 6: return ["afftfilt=real='hypot(re,im)*cos((random(0)*2-1)*2*3.14)':imag='hypot(re,im)*sin((random(1)*2-1)*2*3.14)':win_size=128:overlap=0.8", 'highpass=f=300'];
+    case 7: return ['highpass=f=400', 'lowpass=f=3400', 'acompressor=threshold=0.1:ratio=4', 'volume=3dB'];
+    case 8: return ['highpass=f=250', 'lowpass=f=5000', 'acrusher=bits=12:mix=0.15:mode=log', 'acompressor=threshold=0.15:ratio=3'];
+    case 9: return ['highpass=f=600', 'lowpass=f=3000', 'acrusher=bits=8:mix=0.3:mode=log', 'volume=4dB'];
+    case 10: return ['aecho=0.8:0.85:120|260|430:0.45|0.3|0.2'];
+    default: return [];
+  }
+}
+
 export function audioFxFilters(effects, stage) {
   const out = [];
   for (const fx of effects || []) {
@@ -722,6 +762,7 @@ export function audioFxFilters(effects, stage) {
       case 'deesser':
         out.push(`deesser=i=${(v('essIntensity') / 100).toFixed(2)}:m=${(v('essMax') / 100).toFixed(2)}:f=${(v('essTone') / 100).toFixed(2)}:s=o`);
         break;
+      case 'voiceChanger': out.push(...voiceFilters(v('vcPreset'), v('vcPitch'), !!(fx.params.vcFormant && fx.params.vcFormant.v))); break;
       case 'channel': {
         const m = v('mode');
         const map = ['c0=c1|c1=c1', 'c0=c0|c1=c0', 'c0=c1|c1=c0', 'c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1'][m] || 'c0=c0|c1=c1';
@@ -734,7 +775,7 @@ export function audioFxFilters(effects, stage) {
 }
 
 // Efekt panelindeki klasör sırası
-export const EFFECT_GROUPS = ['Color Correction', 'Image Control', 'Blur & Sharpen', 'Keying', 'Transform', 'Perspective', 'Distort', 'Stylize', 'Channel'];
+export const EFFECT_GROUPS = ['Color Correction', 'Image Control', 'Blur & Sharpen', 'Motion', 'Retro', 'Light', 'Keying', 'Transform', 'Perspective', 'Distort', 'Stylize', 'Channel'];
 
 export const TRANSITION_HEADER = `#version 300 es
 precision highp float;
@@ -913,6 +954,7 @@ void main(){
   o = vec4(r.r, g.g, b.b, max(g.a, max(r.a, b.a)));
 }`,
   },
+  ...EXTRA_TRANSITIONS,
   // Ses geçişleri
   constantPower: { name: 'Constant Power', group: 'Crossfade', category: 'audio' },
   constantGain: { name: 'Constant Gain', group: 'Crossfade', category: 'audio' },
@@ -930,4 +972,4 @@ export function audioTransitionGains(type, p) {
   }
 }
 
-export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'add', 'darken', 'lighten', 'difference', 'softLight', 'hardLight', 'colorDodge', 'colorBurn', 'subtract'];
+export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'add', 'darken', 'lighten', 'difference', 'softLight', 'hardLight', 'colorDodge', 'colorBurn', 'subtract', 'stencilAlpha', 'silhouetteAlpha'];

@@ -6,8 +6,14 @@ import { el, clamp, framesToTC, parseTC, rafThrottle, ipc, nodePath, uid } from 
 import { EFFECTS, TRANSITIONS, BLEND_MODES, effectDef } from '../effectsDef.js';
 import { evalParam, setParamAt, toggleAnimation, isAnimated, addKeyframe, removeKeyframeAt, keyframeAt, prevKeyframe, nextKeyframe } from '../keyframes.js';
 import { defaultVideoProps, defaultAudioProps, createEffect } from '../model.js';
-import { contextMenu, toast } from '../ui/dialogs.js';
-import { maskList, findMask, addMask, removeMask } from '../masks.js';
+import { contextMenu, toast, promptDialog } from '../ui/dialogs.js';
+import { saveUserPreset, applyPreset, applyClipAnim } from '../presets.js';
+import { fontPicker } from '../ui/fontPicker.js';
+import { ANIM_IN, ANIM_OUT, ANIM_COMBO } from '../clipAnim.js';
+import { SPEED_CURVES, applySpeedCurve } from '../speedCurves.js';
+import { ALIGN_BUTTONS } from './graphicsPanel.js';
+import { maskList, findMask, addMask, removeMask, addShapeMask } from '../masks.js';
+import * as MG from '../maskGeom.js';
 import { trackMask, analyzeStabilize } from '../tracker.js';
 
 const STOPWATCH = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="9" r="5.5"/><path d="M8 9V6M6.5 2h3M12.5 4.5l1-1"/></svg>';
@@ -118,6 +124,8 @@ export class EffectControlsPanel {
       const c = curClip();
       if (!c) return;
       if (d.kind === 'effect') app.commands.applyEffect([c.id], d.type);
+      else if (d.kind === 'preset') applyPreset([c.id], d.type);
+      else if (d.kind === 'anim') applyClipAnim([c.id], d.type);
     });
     store.on('change', (info) => { if (!info || !info.live || !this._dragging) this._render(); else this._drawKf(); });
     store.on('selection', () => this._render());
@@ -160,6 +168,24 @@ export class EffectControlsPanel {
         this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname' }), el('label', { class: 'pval' }, uni, t('Uniform Scale'))));
         this._paramRow(c, 'props.rotation', t('Rotation'), { step: 0.5, decimals: 1, suffix: '°' });
         this._paramRow(c, 'props.anchor', t('Anchor Point'), { type: 'point', step: 1, decimals: 1 });
+        // kareye hizala
+        const alb = ALIGN_BUTTONS.map(([m, tip, svg]) => { const b = el('button', { class: 'icon', title: t(tip), html: svg, style: { padding: '0 3px' } }); b.addEventListener('click', () => app.program?.alignClip(c.id, m)); return b; });
+        this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Align') }), el('div', { class: 'pval' }, ...alb)));
+        // tuval arka planı (klip kareyi kaplamadığında)
+        if (c.kind === 'media' || c.kind === 'sequence') {
+          const bf = c.bgFill || { mode: 'none' };
+          const setBg = (fn) => store.commit('Background', (p) => { const cc = p.sequences[p.activeSequenceId].clips[c.id]; cc.bgFill = { mode: 'none', color: '#000000', blur: 40, dim: 20, ...(cc.bgFill || {}) }; fn(cc.bgFill); if (cc.bgFill.mode === 'none') cc.bgFill = null; });
+          const mode = el('select');
+          for (const [v, l] of [['none', 'None'], ['blur', 'Blurred copy'], ['color', 'Color']]) mode.appendChild(el('option', { value: v, text: t(l) }));
+          mode.value = bf.mode || 'none';
+          mode.addEventListener('change', () => setBg((b) => { b.mode = mode.value; }));
+          const col = el('input', { type: 'color', value: bf.color || '#000000', style: { display: bf.mode === 'color' ? '' : 'none' } });
+          col.addEventListener('change', () => setBg((b) => { b.color = col.value; }));
+          const blur = scrubNumber(bf.blur ?? 40, { step: 1, min: 0, max: 200, decimals: 0, onCommit: (v) => setBg((b) => { b.blur = v; }) });
+          if (bf.mode !== 'blur') blur.style.display = 'none';
+          this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Background') }), el('div', { class: 'pval', style: { display: 'flex', gap: '6px', alignItems: 'center' } }, mode, col, blur)));
+        }
+        this._motionBlurRow(c);
       });
       this._section('opacity', t('Opacity'), () => this._resetProps(c, ['opacity']), () => {
         this._paramRow(c, 'props.opacity', t('Opacity'), { step: 0.5, min: 0, max: 100, decimals: 1, suffix: ' %' });
@@ -176,11 +202,18 @@ export class EffectControlsPanel {
           b.addEventListener('click', () => app.commands.run('clip.speed'));
           this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Clip Speed') }), el('div', { class: 'pval' }, el('span', { text: (c.reverse ? '-' : '') + Math.round(c.speed * 10000) / 100 + ' %' }), b)));
           if (c.props.timeRemap && !c.reverse) {
+            const cs = el('select', { style: { maxWidth: '150px' } });
+            cs.appendChild(el('option', { value: '', text: '—' }));
+            for (const [k, n] of SPEED_CURVES) cs.appendChild(el('option', { value: k, text: t(n) }));
+            cs.appendChild(el('option', { value: 'none', text: t('Normal (reset)') }));
+            cs.addEventListener('change', () => { if (cs.value) applySpeedCurve([c.id], cs.value); });
+            this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Speed Curve') }), el('div', { class: 'pval' }, cs)));
             this._paramRow(c, 'props.timeRemap', t('Speed'), { step: 1, min: 0, max: 1000, decimals: 1, suffix: ' %' });
             this.props.appendChild(el('div', { class: 'ec-row', style: { color: 'var(--text-dim)', fontSize: '10px', paddingLeft: '32px' }, text: t('Turn on the stopwatch and add keyframes for speed ramps. Ease In/Out keyframes make smooth ramps.') }));
           }
         });
       }
+      if (c.kind !== 'adjustment') this._section('anim', t('Animation'), () => store.commit('Reset Animation', (p) => { delete p.sequences[p.activeSequenceId].clips[c.id].anim; }), () => this._animRows(c));
       if (c.kind === 'text') this._textSection(c);
       if (c.kind === 'graphic') {
         const b = el('button', { text: t('Edit in Essential Graphics'), style: { margin: '6px 10px' } });
@@ -209,6 +242,66 @@ export class EffectControlsPanel {
     }
     this.props.scrollTop = scroll;
     this._drawKf();
+  }
+
+  // Klip animasyonları: giriş / çıkış (süre sn) ve kombo (hız, miktar)
+  _animRows(c) {
+    const A = c.anim || {};
+    const set = (label, fn, live = false) => {
+      const f = (p) => { const cc = p.sequences[p.activeSequenceId].clips[c.id]; if (!cc) return; cc.anim = structuredClone(cc.anim || {}); fn(cc.anim); };
+      if (live) { if (!store._txn) store.begin(label); store.live(f); } else store.commit(label, f);
+      app.engine.requestRender();
+    };
+    const num = (val, o, fn) => scrubNumber(val, { step: o.step, min: o.min, max: o.max, decimals: o.dec, suffix: o.suffix || '',
+      onStart: () => { this._dragging = true; store.begin(t('Animation')); },
+      onChange: (v) => set('Animation', (a) => fn(a, v), true),
+      onEnd: () => { this._dragging = false; store.end(); },
+      onCommit: (v) => set('Animation', (a) => fn(a, v)) });
+    const sel = (list, cur, onPick) => {
+      const s2 = el('select', { style: { maxWidth: '130px' } });
+      s2.appendChild(el('option', { value: '', text: t('None') }));
+      for (const [k, label] of list) s2.appendChild(el('option', { value: k, text: t(label) }));
+      s2.value = cur || '';
+      s2.addEventListener('change', () => onPick(s2.value));
+      return s2;
+    };
+    const row = (label, ...ctl) => this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: label }), el('div', { class: 'pval', style: { display: 'flex', gap: '6px', alignItems: 'center' } }, ...ctl)));
+    const maxD = Math.max(0.1, c.duration / (store.seq?.fps || 30));
+    row(t('In'), sel(ANIM_IN, A.in?.type, (v) => set('Animation', (a) => { a.in = v ? { dur: a.in?.dur || 0.5, type: v } : null; })),
+      num(A.in?.dur ?? 0.5, { step: 0.05, min: 0.1, max: maxD, dec: 2, suffix: ' s' }, (a, v) => { a.in = { type: a.in?.type || 'fade', dur: v }; }));
+    row(t('Out'), sel(ANIM_OUT, A.out?.type, (v) => set('Animation', (a) => { a.out = v ? { dur: a.out?.dur || 0.5, type: v } : null; })),
+      num(A.out?.dur ?? 0.5, { step: 0.05, min: 0.1, max: maxD, dec: 2, suffix: ' s' }, (a, v) => { a.out = { type: a.out?.type || 'fade', dur: v }; }));
+    row(t('Combo'), sel(ANIM_COMBO, A.combo?.type, (v) => set('Animation', (a) => { a.combo = v ? { speed: a.combo?.speed || 1, amount: a.combo?.amount ?? 100, type: v } : null; })),
+      num(A.combo?.speed ?? 1, { step: 0.05, min: 0.05, max: 10, dec: 2, suffix: ' Hz' }, (a, v) => { a.combo = { type: a.combo?.type || 'rock', amount: a.combo?.amount ?? 100, speed: v }; }),
+      num(A.combo?.amount ?? 100, { step: 1, min: 0, max: 400, dec: 0, suffix: '%' }, (a, v) => { a.combo = { type: a.combo?.type || 'rock', speed: a.combo?.speed || 1, amount: v }; }));
+  }
+
+  // Hareket bulanıklığı (animasyonlu dönüşümde deklanşör açısı)
+  _motionBlurRow(c) {
+    const mb = c.motionBlur || { enabled: false, shutter: 180, samples: 16 };
+    const set = (label, fn) => store.commit(label, (p) => { const cc = p.sequences[p.activeSequenceId].clips[c.id]; cc.motionBlur = { enabled: false, shutter: 180, samples: 16, ...(cc.motionBlur || {}) }; fn(cc.motionBlur); });
+    const on = el('input', { type: 'checkbox' });
+    on.checked = !!mb.enabled;
+    on.addEventListener('change', () => set('Motion Blur', (m) => { m.enabled = on.checked; }));
+    const num = (v, min, max, label, key) => {
+      const i = el('input', { type: 'number', min: String(min), max: String(max), step: '1', style: { width: '56px' } });
+      i.value = v; i.disabled = !mb.enabled;
+      i.addEventListener('change', () => set(label, (m) => { m[key] = clamp(+i.value || min, min, max); }));
+      return i;
+    };
+    this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname' }), el('label', { class: 'pval', title: t('Blurs keyframed position, scale and rotation movement') }, on, t('Motion Blur'))));
+    this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Shutter Angle') }), el('div', { class: 'pval' }, num(mb.shutter, 1, 360, 'Shutter Angle', 'shutter'), el('span', { text: '°' }))));
+    this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Samples') }), el('div', { class: 'pval' }, num(mb.samples, 2, 64, 'Samples', 'samples'))));
+  }
+
+  async _savePreset(c, fxIds) {
+    const list = c.effects.filter((x) => fxIds.includes(x.id) && EFFECTS[x.type]);
+    if (!list.length) return;
+    const name = await promptDialog(t('Preset name'), list.length === 1 ? t(EFFECTS[list[0].type].name) : t('My Preset'), { title: t('Save as Preset...') });
+    if (!name) return;
+    saveUserPreset(name, list);
+    app.effectsPanel?.render();
+    toast(t('Preset saved') + ': ' + name);
   }
 
   _section(key, title, onReset, build, extra = null) {
@@ -407,6 +500,12 @@ export class EffectControlsPanel {
       });
       btns.appendChild(b);
     }
+    const shapes = el('button', { class: 'icon', title: t('Mask Shapes'), html: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 14s-5.5-3.4-5.5-7.2C2.5 4.6 4 3.3 5.6 3.3c1.1 0 1.9.6 2.4 1.4.5-.8 1.3-1.4 2.4-1.4 1.6 0 3.1 1.3 3.1 3.5C13.5 10.6 8 14 8 14z"/></svg>' });
+    shapes.addEventListener('click', (e) => {
+      const r = shapes.getBoundingClientRect();
+      contextMenu(r.left, r.bottom, MG.MASK_SHAPES.map(([k, n]) => ({ label: t(n), action: () => addShapeMask(c.id, owner, k, native[0], native[1]) })));
+    });
+    btns.appendChild(shapes);
     this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Masks'), style: { color: 'var(--text-dim)' } }), btns));
     const list = maskList(c, owner) || [];
     list.forEach((m, i) => {
@@ -495,7 +594,9 @@ export class EffectControlsPanel {
       if (def.category !== 'audio') this._masksBlock(c, fx.id);
     }, {
       badge, buttons: [up, dn, del],
-      onContext: (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: t('Duplicate'), action: () => store.commit('Duplicate Effect', (p) => { const cc = p.sequences[p.activeSequenceId].clips[c.id]; const i = cc.effects.findIndex((x) => x.id === fx.id); const n = structuredClone(cc.effects[i]); n.id = uid('fx'); cc.effects.splice(i + 1, 0, n); }) }, { label: t('Clear'), action: () => del.click() }]); },
+      onContext: (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: t('Duplicate'), action: () => store.commit('Duplicate Effect', (p) => { const cc = p.sequences[p.activeSequenceId].clips[c.id]; const i = cc.effects.findIndex((x) => x.id === fx.id); const n = structuredClone(cc.effects[i]); n.id = uid('fx'); cc.effects.splice(i + 1, 0, n); }) }, { label: t('Clear'), action: () => del.click() }, '-',
+        { label: t('Save as Preset...'), enabled: def.category !== 'audio', action: () => this._savePreset(c, [fx.id]) },
+        { label: t('Save All Effects as Preset...'), enabled: def.category !== 'audio', action: () => this._savePreset(c, c.effects.filter((x) => EFFECTS[x.type]).map((x) => x.id)) }]); },
     });
   }
 
@@ -524,13 +625,7 @@ export class EffectControlsPanel {
       ta.addEventListener('blur', () => { this._dragging = false; store.end(); });
       ta.addEventListener('keydown', (e) => e.stopPropagation());
       this.props.appendChild(el('div', { class: 'ec-row tall' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Source Text') }), ta));
-      const font = el('input', { type: 'text', list: 'uli-fonts' });
-      font.value = T.font;
-      if (!document.getElementById('uli-fonts')) {
-        const dl = el('datalist', { id: 'uli-fonts' }, ...FONTS.map((f) => el('option', { value: f })));
-        document.body.appendChild(dl);
-      }
-      font.addEventListener('change', () => upd('Font', (x) => { x.font = font.value || 'Segoe UI'; }));
+      const font = fontPicker(T.font, (f) => upd('Font', (x) => { x.font = f; }), { width: 170 });
       this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Font') }), el('div', { class: 'pval' }, font)));
       const num = (label, key, opts) => {
         const s = scrubNumber(T[key], { ...opts, onStart: () => { this._dragging = true; store.begin(label); }, onChange: (v) => upd(label, (x) => { x[key] = v; }, true), onEnd: () => { this._dragging = false; store.end(); }, onCommit: (v) => upd(label, (x) => { x[key] = v; }) });

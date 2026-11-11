@@ -629,6 +629,42 @@ function markClip() {
   commitSeq('Mark Clip', (s2) => { s2.inFrame = c.start; s2.outFrame = c.start + c.duration; });
 }
 
+// Proje panelindeki medyayı oynatma kafasına yalnız görüntü ya da yalnız ses olarak yerleştir
+export function placeSelectedMedia(ids, only) {
+  const medias = ids.map((id) => store.project.media[id]).filter((m) => m && (only === 'video' ? m.hasVideo : m.hasAudio && m.type !== 'image'));
+  if (!medias.length) return;
+  const go = (s0) => {
+    const track = Math.max(0, s0.tracks[only].findIndex((tr) => tr.targeted));
+    let at = cur();
+    let placed = [];
+    commitSeq(only === 'video' ? 'Add Video Only' : 'Add Audio Only', (s, p) => {
+      for (const m of medias) {
+        const r = E.placeMedia(p, s, p.media[m.id], { start: at, vTrack: only === 'video' ? track : null, aTrack: only === 'audio' ? track : null, mode: 'overwrite', ...mediaInOut(m), settings });
+        placed.push(...r);
+        if (s.clips[r[0]]) at = s.clips[r[0]].start + s.clips[r[0]].duration;
+      }
+    });
+    store.select(placed);
+    showPanel('timeline');
+  };
+  if (!seq()) newSequenceFromMedia(medias[0], go);
+  else go(seq());
+}
+
+// Bağlı klibin bir yarısını sil, diğeri bağımsız kalır
+function keepLinkedPart(keep) {
+  const sel = store.selectedClips().filter((c) => c.linkId);
+  if (!sel.length) return;
+  const links = new Set(sel.map((c) => c.linkId));
+  commitSeq(keep === 'video' ? 'Delete Audio' : 'Delete Video', (s) => {
+    for (const c of Object.values(s.clips)) {
+      if (!links.has(c.linkId)) continue;
+      if (c.type === keep) c.linkId = null;
+      else delete s.clips[c.id];
+    }
+  });
+}
+
 // Alt klip: kaynak monitörü in/out, proje panelinde seçili medya ya da zaman çizelgesinde seçili klibin kaynak aralığından
 export async function makeSubclip() {
   const p = store.project;
@@ -690,7 +726,7 @@ function frameHold() {
 // ---- Komut tanımları ----
 export function initCommands() {
   app.commands = {
-    run, openSequence, closeSequence, applyEffect, applyTransition, newSequenceFromMedia, editMarker,
+    run, openSequence, closeSequence, applyEffect, applyTransition, newSequenceFromMedia, placeSelectedMedia, editMarker,
     showPanel, label, shortcutOf, isEnabled, newSequence,
   };
 
@@ -791,7 +827,10 @@ export function initCommands() {
     }
   }), { enabled: hasSel });
   def('clip.frameHold', 'Add Frame Hold', () => frameHold(), { enabled: hasSel });
+  def('clip.keepVideo', 'Delete Audio (Keep Video)', () => keepLinkedPart('video'), { enabled: hasSel });
+  def('clip.keepAudio', 'Delete Video (Keep Audio)', () => keepLinkedPart('audio'), { enabled: hasSel });
   def('clip.makeSubclip', 'Make Subclip...', () => makeSubclip(), { shortcut: 'Ctrl+U' });
+  def('clip.splitScreen', 'Split Screen...', async () => { const Sp = await import('./splitScreen.js'); Sp.splitScreenDialog(); }, { enabled: hasSel });
   def('clip.sceneDetect', 'Scene Edit Detection...', () => sceneEditDetection(), { enabled: hasSel });
   // Çok kamera
   def('multicam.create', 'Create Multi-Camera Source Sequence...', () => createMulticamDialog(app.project?.selectedMediaIds() || []));
@@ -850,6 +889,7 @@ export function initCommands() {
   def('clip.toggleProxies', 'Toggle Proxies', () => { store.ui.useProxies = !store.ui.useProxies; settings.useProxies = store.ui.useProxies; saveSettings(); mediaEvents.emit('proxyReady'); engine().requestRender(); toast(store.ui.useProxies ? t('Proxies enabled') : t('Proxies disabled')); });
 
   // Sekans
+  def('sequence.canvas', 'Canvas / Aspect Ratio...', async () => { const Cv = await import('./canvas.js'); Cv.canvasDialog(); }, { enabled: hasSeq });
   def('sequence.settings', 'Sequence Settings...', async () => {
     const s = seq();
     const r = await sequenceDialog({ ...s, preset: 'custom' }, false);
@@ -1004,6 +1044,9 @@ export function initCommands() {
   def('window.graphics', 'Essential Graphics', () => showPanel('graphics'));
   def('window.essentialSound', 'Essential Sound', () => showPanel('essentialSound'));
   def('audio.record', 'Record Voiceover', async () => { const A = await import('./audioTools.js'); A.toggleRecording(); }, { shortcut: 'Ctrl+Alt+R', enabled: hasSeq });
+  def('audio.detectBeats', 'Detect Beats', async () => { const B = await import('./beats.js'); return B.detectBeatsCommand(); }, { enabled: hasSel });
+  def('sequence.cutToBeat', 'Auto Cut to Beat...', async () => { const B = await import('./beats.js'); return B.cutToBeatDialog(); }, { enabled: hasSel });
+  def('marker.clearBeats', 'Clear Beat Markers', () => commitSeq('Clear Beat Markers', (s) => { s.markers = s.markers.filter((m) => m.tag !== 'beat'); }), { enabled: hasSeq });
   def('audio.sync', 'Synchronize by Audio', async () => { const A = await import('./audioTools.js'); A.syncByAudio(E.expandLinked(seq(), [...store.ui.selection]).filter((id) => seq().clips[id]?.type === 'audio')); }, { enabled: hasSel });
   def('caption.add', 'Add Caption', () => {
     let id = null;
@@ -1086,8 +1129,8 @@ export function menuStructure() {
       item('clip.speed'), item('clip.frameHold'), '-',
       item('clip.insert'), item('clip.overwrite'), item('clip.replaceFromSource'), '-',
       { ...item('clip.enable'), checked: () => store.selectedClips().length > 0 && store.selectedClips().every((c) => c.enabled) },
-      { ...item('clip.link'), label: t('Link / Unlink') }, item('clip.rename'), item('clip.makeSubclip'), item('clip.nest'), item('clip.removeEffects'), '-',
-      item('clip.sceneDetect'), '-',
+      { ...item('clip.link'), label: t('Link / Unlink') }, item('clip.keepVideo'), item('clip.keepAudio'), item('clip.rename'), item('clip.makeSubclip'), item('clip.nest'), item('clip.removeEffects'), '-',
+      item('clip.sceneDetect'), item('clip.splitScreen'), '-',
       { label: t('Multi-Camera'), submenu: () => [
         { ...item('multicam.enable'), checked: () => store.selectedClips().some((c) => isMulticamClip(c)) },
         { ...item('multicam.view'), checked: () => !!store.ui.multicamView },
@@ -1098,7 +1141,7 @@ export function menuStructure() {
       { label: t('Proxy'), submenu: () => [item('clip.createProxy'), { ...item('clip.toggleProxies'), checked: () => store.ui.useProxies }] },
     ] },
     { label: t('Sequence'), items: () => [
-      item('sequence.settings'), '-',
+      item('sequence.settings'), item('sequence.canvas'), '-',
       item('sequence.addEdit'), item('sequence.addEditAll'), '-',
       item('sequence.videoTransition'), item('sequence.audioTransition'), '-',
       item('sequence.lift'), item('sequence.extract'), item('sequence.rippleTrimPrev'), item('sequence.rippleTrimNext'), item('sequence.closeAllGaps'), '-',
@@ -1106,7 +1149,7 @@ export function menuStructure() {
       { ...item('sequence.snap'), checked: () => store.ui.snapping }, { ...item('sequence.linkedSelection'), checked: () => store.ui.linkedSelection }, '-',
       item('sequence.addTracks'), item('sequence.deleteEmptyTracks'), '-',
       item('caption.add'), item('caption.import'), item('caption.export'), '-',
-      item('audio.record'), item('audio.sync'),
+      item('audio.record'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'),
     ] },
     { label: t('Markers'), items: () => [
       item('mark.in'), item('mark.out'), item('mark.clip'), item('mark.selection'), '-',

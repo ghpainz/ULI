@@ -10,6 +10,7 @@ import * as MG from '../maskGeom.js';
 import { playbackUrl, rt, mediaEvents, mediaStatus, createProxy } from '../media.js';
 import { videoLayersAt, itemsOfLayers } from '../renderGraph.js';
 import { switchAngle } from '../multicam.js';
+import { layerBounds, alignLayer } from '../graphics.js';
 import * as E from '../editing.js';
 import { settings, saveSettings } from '../settings.js';
 import { contextMenu, toast } from '../ui/dialogs.js';
@@ -130,7 +131,10 @@ export class ProgramMonitor {
     this.tbox = el('div', { class: 'transform-box', style: { display: 'none' } });
     this.maskSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     this.maskSvg.setAttribute('style', 'position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none');
-    this.view.append(this.msg, this.overlayMsg, this.safe, this.tbox, this.maskSvg);
+    const svgEl = () => { const g = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); g.setAttribute('style', 'position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none'); return g; };
+    this.guideSvg = svgEl(); // yapışma kılavuzları
+    this.layerSvg = svgEl(); // seçili grafik katmanının kutusu
+    this.view.append(this.msg, this.overlayMsg, this.safe, this.tbox, this.maskSvg, this.layerSvg, this.guideSvg);
     mon.appendChild(this.view);
     this.mini = new MiniBar(mon, () => {
       const s = store.seq;
@@ -317,6 +321,7 @@ export class ProgramMonitor {
     if (this._drawMulticam(r)) { this.tbox.style.display = 'none'; return; }
     const maskShown = this._drawMaskOverlay();
     const c = s && !app.engine.playing && !maskShown ? this._selectedVideoClip() : null;
+    if (r) this._drawLayerBox(c); else this._drawLayerBox(null);
     if (!c || !r) { this.tbox.style.display = 'none'; return; }
     const { pts } = this._clipCorners(c);
     const v = pts.map(([x, y]) => app.engine.seqToView(x, y));
@@ -401,8 +406,10 @@ export class ProgramMonitor {
       if (c && !this._pointInClip(c, sp) && !hit) return;
     }
     if (!c) return;
+    if (c.kind === 'graphic' && corner == null && this._layerDown(e, c, sp, r)) return;
     const f = app.engine.currentFrame - c.start;
     const startPos = evalParam(c.props.position, f) || [s.width / 2, s.height / 2];
+    const box0 = this._bbox(this._clipCorners(c).pts);
     const startScale = evalParam(c.props.scale, f) ?? 100;
     const startScaleW = evalParam(c.props.scaleWidth, f) ?? 100;
     const { pos } = this._clipCorners(c);
@@ -424,6 +431,10 @@ export class ProgramMonitor {
         } else {
           let nx = startPos[0] + (p[0] - sp[0]), ny = startPos[1] + (p[1] - sp[1]);
           if (ev.shiftKey) { if (Math.abs(p[0] - sp[0]) > Math.abs(p[1] - sp[1])) ny = startPos[1]; else nx = startPos[0]; }
+          // kare ortasına / kenarlarına yapış (Ctrl basılıyken kapalı)
+          const sn = ev.ctrlKey ? null : this._snap(box0, nx - startPos[0], ny - startPos[1], [0, 0, s.width, s.height]);
+          if (sn) { nx += sn.dx; ny += sn.dy; }
+          this._drawGuides(sn, (x, y) => [x, y]);
           setParamAt(cc.props.position, f, [Math.round(nx * 10) / 10, Math.round(ny * 10) / 10]);
         }
       });
@@ -432,10 +443,145 @@ export class ProgramMonitor {
     const up = () => {
       window.removeEventListener('mousemove', mv);
       window.removeEventListener('mouseup', up);
+      this._drawGuides(null);
       if (begun) store.end();
     };
     window.addEventListener('mousemove', mv);
     window.addEventListener('mouseup', up);
+  }
+
+  _bbox(pts) {
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  }
+
+  // Kutunun (dx, dy kadar taşınmış hali) kenar/merkezini karenin kenar/merkezine yapıştır. frame: [x0, y0, x1, y1]
+  _snap(box, dx, dy, frame) {
+    const r = app.engine?.displayRect, s = store.seq;
+    if (!r || !s) return null;
+    const thr = (8 * s.width) / r.w;
+    const pick = (a0, a1, f0, f1) => {
+      const ts = [f0, (f0 + f1) / 2, f1], cs = [a0, (a0 + a1) / 2, a1];
+      let best = null;
+      for (const tv of ts) for (const cv of cs) { const d = tv - cv; if (Math.abs(d) <= thr && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: tv }; }
+      return best;
+    };
+    const bx = pick(box.x0 + dx, box.x1 + dx, frame[0], frame[2]);
+    const by = pick(box.y0 + dy, box.y1 + dy, frame[1], frame[3]);
+    if (!bx && !by) return null;
+    return { dx: bx ? bx.d : 0, dy: by ? by.d : 0, gx: bx ? bx.at : null, gy: by ? by.at : null };
+  }
+
+  // Yapışma kılavuz çizgileri. toSeq: kılavuz koordinatını sekans koordinatına çevirir
+  _drawGuides(sn, toSeq) {
+    const g = this.guideSvg;
+    while (g.firstChild) g.firstChild.remove();
+    const s = store.seq;
+    if (!sn || !s) return;
+    const line = (x1, y1, x2, y2) => {
+      const a = app.engine.seqToView(x1, y1), b = app.engine.seqToView(x2, y2);
+      const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l.setAttribute('x1', a[0]); l.setAttribute('y1', a[1]); l.setAttribute('x2', b[0]); l.setAttribute('y2', b[1]);
+      l.setAttribute('stroke', '#ff3df2'); l.setAttribute('stroke-width', '1'); l.setAttribute('stroke-dasharray', '5 3');
+      g.appendChild(l);
+    };
+    if (sn.gx != null) { const [x] = toSeq(sn.gx, 0); line(x, 0, x, s.height); }
+    if (sn.gy != null) { const [, y] = toSeq(0, sn.gy); line(0, y, s.width, y); }
+  }
+
+  // Grafik klibi: sekans noktası <-> grafik (katman) koordinatı (bağlantı noktası merkezde varsayılır, döndürme yok)
+  _gfxMap(c) {
+    const s = store.seq;
+    const { pos, sc, scw } = this._clipCorners(c);
+    return {
+      toG: (x, y) => [(x - pos[0]) / (scw || 1) + s.width / 2, (y - pos[1]) / (sc || 1) + s.height / 2],
+      toS: (x, y) => [pos[0] + (x - s.width / 2) * scw, pos[1] + (y - s.height / 2) * sc],
+    };
+  }
+
+  // Program monitöründe grafik katmanını tıklayıp sürükleme (Temel Grafikler'deki gibi). Katmana denk gelmezse false
+  _layerDown(e, c, sp, r) {
+    const s = store.seq;
+    const layers = c.graphic?.layers || [];
+    const M = this._gfxMap(c);
+    const [gx, gy] = M.toG(sp[0], sp[1]);
+    const pad = (6 * s.width) / (app.engine.displayRect?.w || s.width);
+    let hit = null;
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const L = layers[i];
+      if (L.hidden) continue;
+      const b = layerBounds(L);
+      if (b.w >= s.width * 0.98 && b.h >= s.height * 0.98) continue; // tam kare arka planlar
+      if (gx >= b.x - pad && gx <= b.x + b.w + pad && gy >= b.y - pad && gy <= b.y + b.h + pad) { hit = L; break; }
+    }
+    if (!hit) return false;
+    const G = app.graphics;
+    if (G) { G.selLayer = hit.id; G.tab = 'edit'; G.render(); }
+    const layerId = hit.id, clipId = c.id;
+    const b0 = layerBounds(hit);
+    const box0 = { x0: b0.x, y0: b0.y, x1: b0.x + b0.w, y1: b0.y + b0.h };
+    const x0 = hit.x, y0 = hit.y;
+    let begun = false;
+    const mv = (ev) => {
+      const p = app.engine.viewToSeq(ev.clientX - r.left, ev.clientY - r.top);
+      if (!p) return;
+      const [px, py] = M.toG(p[0], p[1]);
+      let dx = px - gx, dy = py - gy;
+      if (ev.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      const sn = ev.ctrlKey ? null : this._snap(box0, dx, dy, [0, 0, s.width, s.height]);
+      if (sn) { dx += sn.dx; dy += sn.dy; }
+      if (!begun) { store.begin('Move Layer'); begun = true; }
+      store.live((pr) => {
+        const L = pr.sequences[pr.activeSequenceId].clips[clipId]?.graphic?.layers.find((x) => x.id === layerId);
+        if (L) { L.x = Math.round((x0 + dx) * 10) / 10; L.y = Math.round((y0 + dy) * 10) / 10; }
+      });
+      this._drawGuides(sn, M.toS);
+      app.engine.requestRender();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up);
+      this._drawGuides(null);
+      if (begun) store.end();
+      G?.render();
+      this.updateOverlay();
+    };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+    return true;
+  }
+
+  // Klibi kareye hizala (Efekt Kontrolleri'ndeki hizalama düğmeleri)
+  alignClip(clipId, mode) {
+    const s = store.seq;
+    const c = s?.clips[clipId];
+    if (!c) return;
+    const f = clamp(app.engine.currentFrame - c.start, 0, c.duration - 1);
+    const b = this._bbox(this._clipCorners(c).pts);
+    const d = { left: [-b.x0, 0], hcenter: [s.width / 2 - (b.x0 + b.x1) / 2, 0], right: [s.width - b.x1, 0], top: [0, -b.y0], vcenter: [0, s.height / 2 - (b.y0 + b.y1) / 2], bottom: [0, s.height - b.y1] }[mode];
+    if (!d) return;
+    store.commit('Align', (pr) => {
+      const cc = pr.sequences[pr.activeSequenceId].clips[clipId];
+      const pos = evalParam(cc.props.position, f) || [s.width / 2, s.height / 2];
+      setParamAt(cc.props.position, f, [Math.round((pos[0] + d[0]) * 10) / 10, Math.round((pos[1] + d[1]) * 10) / 10]);
+    });
+    app.engine.requestRender();
+  }
+
+  // Seçili grafik katmanının kesikli kutusu
+  _drawLayerBox(c) {
+    const g = this.layerSvg;
+    while (g.firstChild) g.firstChild.remove();
+    if (!c || c.kind !== 'graphic' || !app.graphics?.selLayer) return;
+    const L = c.graphic?.layers.find((x) => x.id === app.graphics.selLayer);
+    if (!L || L.hidden) return;
+    const M = this._gfxMap(c);
+    const b = layerBounds(L);
+    const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]].map(([x, y]) => app.engine.seqToView(...M.toS(x, y)));
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', pts.map((p) => p.join(',')).join(' '));
+    poly.setAttribute('fill', 'none'); poly.setAttribute('stroke', '#e8c547'); poly.setAttribute('stroke-width', '1'); poly.setAttribute('stroke-dasharray', '4 3');
+    g.appendChild(poly);
   }
 
   // ---- Maskeler ----
@@ -810,9 +956,7 @@ export class SourceMonitor {
     this.view.draggable = true;
     this.view.addEventListener('dragstart', (e) => {
       if (!this.mediaId) { e.preventDefault(); return; }
-      app.dragMedia = [this.mediaId];
-      e.dataTransfer.setData('application/x-uli-media', JSON.stringify([this.mediaId]));
-      e.dataTransfer.effectAllowed = 'copy';
+      this._startDrag(e, { video: this.useVideo, audio: this.useAudio });
     });
     this.view.addEventListener('wheel', (e) => { e.preventDefault(); this.pause(); this.setFrame(this.frame + (e.deltaY > 0 ? 1 : -1)); }, { passive: false });
     mon.appendChild(this.view);
@@ -828,6 +972,11 @@ export class SourceMonitor {
     this.playBtn = iconBtn(I.play, t('Play/Stop'), () => this.toggle());
     this.vBtn = iconBtn(I.video, t('Drag Video Only / toggle video'), () => { this.useVideo = !this.useVideo; if (!this.useVideo && !this.useAudio) this.useAudio = true; this._upd(); });
     this.aBtn = iconBtn(I.audio, t('Drag Audio Only / toggle audio'), () => { this.useAudio = !this.useAudio; if (!this.useVideo && !this.useAudio) this.useVideo = true; this._upd(); });
+    // düğmelerden sürükleme: yalnız görüntü / yalnız ses
+    for (const [b, tracks] of [[this.vBtn, { video: true, audio: false }], [this.aBtn, { video: false, audio: true }]]) {
+      b.draggable = true;
+      b.addEventListener('dragstart', (e) => { if (!this.mediaId) { e.preventDefault(); return; } this._startDrag(e, tracks); });
+    }
     const grow = el('div', { class: 'grow' },
       iconBtn(I.markIn, t('Mark In') + ' (I)', () => this.markIn()),
       iconBtn(I.markOut, t('Mark Out') + ' (O)', () => this.markOut()),
@@ -851,6 +1000,14 @@ export class SourceMonitor {
     store.on('project', () => { this.mediaId = null; this._show(); });
     app.source = this;
     this._upd();
+  }
+
+  _startDrag(e, tracks) {
+    app.dragMedia = [this.mediaId];
+    app.dragSeqs = [];
+    app.dragTracks = tracks;
+    e.dataTransfer.setData('application/x-uli-media', JSON.stringify([this.mediaId]));
+    e.dataTransfer.effectAllowed = 'copy';
   }
 
   onResize() { this.mini.draw(); this._drawAudioArt(); }

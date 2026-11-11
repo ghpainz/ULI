@@ -21,6 +21,49 @@ export function vertexCount(type, path) {
   return Math.floor((path || []).length / STRIDE[type]);
 }
 
+// Hazır maske şekilleri (çokgen). sw, sh: klibin kaynak boyutu. Döner: { type, path }
+export const MASK_SHAPES = [['heart', 'Heart'], ['star', 'Star'], ['diamond', 'Diamond'], ['roundRect', 'Rounded Rectangle'], ['linear', 'Linear (half)'], ['mirror', 'Mirror (band)'], ['circle', 'Circle']];
+export function shapePath(shape, sw, sh) {
+  const cx = sw / 2, cy = sh / 2, r = Math.min(sw, sh) * 0.36;
+  const pts = [];
+  const r1 = (v) => Math.round(v * 10) / 10;
+  if (shape === 'heart') {
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const x = 16 * Math.pow(Math.sin(a), 3), y = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
+      pts.push(cx + (x / 17) * r, cy - (y / 17) * r - r * 0.05);
+    }
+  } else if (shape === 'star') {
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.42 : r; pts.push(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+  } else if (shape === 'diamond') {
+    pts.push(cx, cy - r, cx + r * 0.75, cy, cx, cy + r, cx - r * 0.75, cy);
+  } else if (shape === 'roundRect') {
+    const w = sw * 0.32, h = sh * 0.32, rad = Math.min(w, h) * 0.25;
+    const corners = [[cx + w - rad, cy - h + rad, -Math.PI / 2], [cx + w - rad, cy + h - rad, 0], [cx - w + rad, cy + h - rad, Math.PI / 2], [cx - w + rad, cy - h + rad, Math.PI]];
+    for (const [x, y, a0] of corners) for (let k = 0; k <= 6; k++) { const a = a0 + (k / 6) * (Math.PI / 2); pts.push(x + Math.cos(a) * rad, y + Math.sin(a) * rad); }
+  } else if (shape === 'linear') {
+    pts.push(-sw, -sh, cx, -sh, cx, sh * 2, -sw, sh * 2);
+  } else if (shape === 'mirror') {
+    pts.push(-sw, cy - sh / 6, sw * 2, cy - sh / 6, sw * 2, cy + sh / 6, -sw, cy + sh / 6);
+  } else if (shape === 'circle') {
+    return { type: 'ellipse', path: [cx - r, cy - r, r * 2, r * 2].map(r1) };
+  }
+  return { type: 'polygon', path: pts.map(r1) };
+}
+
+// Elipsi 4 noktalı bezier eğriye çevir (döndürülebilir; takipte dönüş uygulanabilsin diye)
+export function ellipseToBezier(path) {
+  const [x, y, w, h] = path;
+  const cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2, k = 0.5523;
+  const r = (v) => Math.round(v * 10) / 10;
+  return [
+    cx + rx, cy, 0, -k * ry, 0, k * ry,
+    cx, cy + ry, k * rx, 0, -k * rx, 0,
+    cx - rx, cy, 0, k * ry, 0, -k * ry,
+    cx, cy - ry, -k * rx, 0, k * rx, 0,
+  ].map(r);
+}
+
 export function toBezier(path) {
   const out = [];
   for (let i = 0; i + 1 < path.length; i += 2) out.push(path[i], path[i + 1], 0, 0, 0, 0);

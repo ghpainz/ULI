@@ -9,32 +9,75 @@ import { createEffect } from '../model.js';
 import { settings, saveSettings } from '../settings.js';
 import { contextMenu, toast } from '../ui/dialogs.js';
 import { DEFAULT_CURVES, monotoneSpline, periodicSpline } from '../curves.js';
+import { applyClipAnim, PRESETS, PRESET_GROUPS, presetById, applyPreset, userPresets, deleteUserPreset, favorites, isFavorite, toggleFavorite } from '../presets.js';
+import { drawThumb, THUMB_W, THUMB_H, sampleCanvas } from '../fxPreview.js';
+import { ANIM_IN, ANIM_OUT, ANIM_COMBO, drawAnimThumb } from '../clipAnim.js';
 
 // ===================== EFEKTLER =====================
+// Liste veya ızgara (canlı küçük resimli) görünüm; favoriler, hazır ayarlar (look/hareket) ve kullanıcı ön ayarları
 export class EffectsPanel {
-  constructor() { this.id = 'effects'; this.open = new Set(JSON.parse(localStorage.getItem('uli.fxOpen') || '["vfx","vtr"]')); this.filter = ''; }
+  constructor() {
+    this.id = 'effects';
+    this.open = new Set(JSON.parse(localStorage.getItem('uli.fxOpen') || '["fav","presets","vfx","vtr"]'));
+    this.filter = '';
+    this.view = localStorage.getItem('uli.fxView') || 'grid';
+  }
   title() { return t('Effects'); }
   mount(body) {
     const tb = el('div', { class: 'toolbar' });
-    this.search = el('input', { type: 'text', placeholder: t('Search effects') });
+    this.search = el('input', { type: 'text', placeholder: t('Search effects'), style: { flex: '1' } });
     this.search.addEventListener('input', () => { this.filter = this.search.value.toLowerCase(); this.render(); });
-    tb.appendChild(this.search);
+    const vbtn = (mode, svg, tip) => {
+      const b = el('button', { class: 'icon', title: tip, html: svg });
+      b.addEventListener('click', () => { this.view = mode; localStorage.setItem('uli.fxView', mode); this.render(); });
+      return b;
+    };
+    this.listBtn = vbtn('list', '<svg viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z"/></svg>', t('List View'));
+    this.gridBtn = vbtn('grid', '<svg viewBox="0 0 16 16"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"/></svg>', t('Thumbnail View'));
+    tb.append(this.search, this.listBtn, this.gridBtn);
     this.tree = el('div', { class: 'tree' });
     body.append(tb, this.tree);
+    app.effectsPanel = this;
+    this.io = new IntersectionObserver((ents) => {
+      for (const en of ents) if (en.isIntersecting && !en.target._drawn) { en.target._drawn = true; en.target._paint(0.5); }
+    }, { root: this.tree, rootMargin: '100px' });
     this.render();
   }
-  _folder(key, label, children) {
+  _folder(key, label, children, icon = '📁') {
     const open = this.filter ? true : this.open.has(key);
     const f = el('div', { class: 'tree-folder' });
-    const row = el('div', { class: 'tree-row' }, el('span', { class: 'caret', text: open ? '▾' : '▸' }), el('span', { text: '📁' }), el('span', { text: label }));
+    const row = el('div', { class: 'tree-row' }, el('span', { class: 'caret', text: open ? '▾' : '▸' }), el('span', { text: icon }), el('span', { text: label }));
     row.addEventListener('click', () => { if (this.open.has(key)) this.open.delete(key); else this.open.add(key); localStorage.setItem('uli.fxOpen', JSON.stringify([...this.open])); this.render(); });
-    const ch = el('div', { class: 'tree-children' + (open ? '' : ' collapsed') });
-    for (const c of children) ch.appendChild(c);
+    const leaves = children.length && children.every((c) => c._leaf);
+    const ch = el('div', { class: 'tree-children' + (open ? '' : ' collapsed') + (leaves && this.view === 'grid' ? ' fx-grid' : '') });
+    if (open) for (const c of children) ch.appendChild(c);
     f.append(row, ch);
     return f;
   }
+  _what(kind, type) {
+    if (kind === 'preset') { const pr = presetById(type); return { kind: 'preset', effects: pr ? pr.effects : [] }; }
+    return { kind, type };
+  }
   _item(kind, type, name, cls, isDefault) {
-    const r = el('div', { class: 'tree-row', draggable: 'true', title: t(name) }, el('span', { class: 'fx-icon ' + cls }), el('span', { text: t(name) + (isDefault ? '  ★' : '') }));
+    const fav = isFavorite(kind + ':' + type);
+    const label = t(name) + (isDefault ? '  ★' : '');
+    let r;
+    if (this.view === 'grid' && cls !== 'afx') {
+      const cv = el('canvas', { width: THUMB_W, height: THUMB_H, class: 'fx-thumb' });
+      cv._what = this._what(kind, type);
+      cv._paint = kind === 'anim' ? (ph) => drawAnimThumb(cv, sampleCanvas(), type.split(':')[0], type.split(':')[1], ph) : (ph) => drawThumb(cv, cv._what, ph);
+      r = el('div', { class: 'fx-tile', draggable: 'true', title: label }, cv, el('div', { class: 'fx-tile-name', text: (fav ? '★ ' : '') + label }));
+      r._thumb = cv;
+      let raf = 0, t0 = 0;
+      const period = kind === 'transition' || kind === 'anim' ? 1600 : 4000;
+      const loop = (ts) => { if (!t0) t0 = ts; cv._paint(((ts - t0) / period) % 1); raf = requestAnimationFrame(loop); };
+      r.addEventListener('mouseenter', () => { t0 = 0; raf = requestAnimationFrame(loop); });
+      r.addEventListener('mouseleave', () => { cancelAnimationFrame(raf); cv._paint(kind === 'anim' && type.startsWith('out') ? 0 : 0.5); });
+    } else {
+      r = el('div', { class: 'tree-row', draggable: 'true', title: label }, el('span', { class: 'fx-icon ' + cls }), el('span', { text: (fav ? '★ ' : '') + label }));
+    }
+    r._leaf = true;
+    r._label = name;
     r.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-uli-effect', JSON.stringify({ kind, type }));
       e.dataTransfer.effectAllowed = 'copy';
@@ -42,11 +85,16 @@ export class EffectsPanel {
     r.addEventListener('dblclick', () => this._apply(kind, type));
     r.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (kind !== 'transition') return;
-      contextMenu(e.clientX, e.clientY, [{ label: t('Set Selected as Default Transition'), action: () => {
+      const items = [
+        { label: t('Apply to Selected Clips'), action: () => this._apply(kind, type) },
+        { label: isFavorite(kind + ':' + type) ? t('Remove from Favorites') : t('Add to Favorites'), action: () => { toggleFavorite(kind + ':' + type); this.render(); } },
+      ];
+      if (kind === 'transition') items.push({ label: t('Set Selected as Default Transition'), action: () => {
         if (TRANSITIONS[type].category === 'audio') settings.defaultAudioTransition = type; else settings.defaultVideoTransition = type;
         saveSettings(); this.render();
-      } }]);
+      } });
+      if (kind === 'preset' && presetById(type)?.user) items.push('-', { label: t('Delete Preset'), action: () => { deleteUserPreset(type); this.render(); } });
+      contextMenu(e.clientX, e.clientY, items);
     });
     return r;
   }
@@ -54,6 +102,8 @@ export class EffectsPanel {
     const sel = store.selectedClips();
     if (!sel.length) { toast(t('Select a clip in the timeline first')); return; }
     if (kind === 'effect') app.commands.applyEffect(sel.map((c) => c.id), type);
+    else if (kind === 'preset') applyPreset(sel.map((c) => c.id), type);
+    else if (kind === 'anim') applyClipAnim(sel.map((c) => c.id), type);
     else {
       const cat = TRANSITIONS[type].category;
       store.begin('Apply Transition');
@@ -64,9 +114,40 @@ export class EffectsPanel {
       store.end();
     }
   }
+  _itemFor(key) {
+    const i = key.indexOf(':');
+    const kind = key.slice(0, i), type = key.slice(i + 1);
+    if (kind === 'effect') { const d = EFFECTS[type] || AUDIO_EFFECTS[type]; return d ? this._item('effect', type, d.name, d.category === 'audio' ? 'afx' : 'vfx') : null; }
+    if (kind === 'anim') { const [k, ty] = type.split(':'); const it = { in: ANIM_IN, out: ANIM_OUT, combo: ANIM_COMBO }[k]?.find((x) => x[0] === ty); return it ? this._item('anim', type, it[1], 'anim') : null; }
+    if (kind === 'transition') { const d = TRANSITIONS[type]; return d ? this._item('transition', type, d.name, d.category === 'audio' ? 'afx' : 'trans') : null; }
+    const pr = presetById(type);
+    return pr ? this._item('preset', type, pr.name, 'preset') : null;
+  }
   render() {
     this.tree.innerHTML = '';
+    this.io?.disconnect();
+    this.listBtn?.classList.toggle('active', this.view === 'list');
+    this.gridBtn?.classList.toggle('active', this.view === 'grid');
     const match = (n) => !this.filter || t(n).toLowerCase().includes(this.filter) || n.toLowerCase().includes(this.filter);
+    // favoriler
+    const favs = favorites().map((k) => this._itemFor(k)).filter((it) => it && match(it._label));
+    if (favs.length) this.tree.appendChild(this._folder('fav', t('Favorites'), favs, '★'));
+    // hazır ayarlar
+    const pre = [];
+    for (const g of PRESET_GROUPS) {
+      const items = Object.entries(PRESETS).filter(([, d]) => d.group === g && match(d.name)).map(([k, d]) => this._item('preset', k, d.name, 'preset'));
+      if (items.length) pre.push(this._folder('pre:' + g, t(g), items));
+    }
+    const mine = userPresets().filter((d) => match(d.name)).map((d) => this._item('preset', d.id, d.name, 'preset'));
+    if (mine.length) pre.push(this._folder('pre:mine', t('My Presets'), mine));
+    if (pre.length) this.tree.appendChild(this._folder('presets', t('Presets'), pre, '✨'));
+    // klip animasyonları
+    const an = [];
+    for (const [k, list, label] of [['in', ANIM_IN, 'In'], ['out', ANIM_OUT, 'Out'], ['combo', ANIM_COMBO, 'Combo']]) {
+      const items = list.filter(([, n]) => match(n)).map(([ty, n]) => this._item('anim', k + ':' + ty, n, 'anim'));
+      if (items.length) an.push(this._folder('anim:' + k, t(label), items));
+    }
+    if (an.length) this.tree.appendChild(this._folder('anims', t('Clip Animations'), an, '🎬'));
     // video efektleri
     const vfx = [];
     for (const g of EFFECT_GROUPS) {
@@ -89,6 +170,8 @@ export class EffectsPanel {
     if (afx.length) this.tree.appendChild(this._folder('afx', t('Audio Effects'), afx));
     const atr = Object.entries(TRANSITIONS).filter(([, d]) => d.category === 'audio' && match(d.name)).map(([k, d]) => this._item('transition', k, d.name, 'afx', settings.defaultAudioTransition === k));
     if (atr.length) this.tree.appendChild(this._folder('atr', t('Audio Transitions'), [this._folder('atr:cf', t('Crossfade'), atr)]));
+    // görünür küçük resimleri tembel çiz
+    for (const cv of this.tree.querySelectorAll('canvas.fx-thumb')) this.io?.observe(cv);
   }
 }
 

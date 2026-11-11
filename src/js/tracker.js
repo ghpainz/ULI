@@ -91,16 +91,26 @@ export async function trackMask({ clipId, owner, maskId, method = 'psr', dir = '
     setP(1);
     // keyframe yaz
     const written = T.length;
+    let converted = false;
     store.commit('Track Mask', (pr) => {
       const c = pr.sequences[pr.activeSequenceId].clips[clipId];
       const mm = findMask(c, owner, maskId);
       if (!mm) return false;
       const p = mm.path;
-      if (!p.kf || !p.kf.length) p.kf = [{ f: l0, v: structuredClone(startPath), e: 'linear' }];
+      let base = startPath;
+      // elips dönemez: dönüşlü takipte maske eşdeğer bezier eğriye çevrilir
+      if (mm.type === 'ellipse' && method !== 'position' && T.some((x) => x && Math.abs(x.rot) > 0.002)) {
+        mm.type = 'bezier';
+        if (p.kf) for (const k of p.kf) k.v = MG.ellipseToBezier(k.v);
+        p.v = MG.ellipseToBezier(p.v);
+        base = MG.ellipseToBezier(startPath);
+        converted = true;
+      }
+      if (!p.kf || !p.kf.length) p.kf = [{ f: l0, v: structuredClone(base), e: 'linear' }];
       const map = new Map(p.kf.map((k) => [k.f, k]));
       for (let i = 1; i < T.length; i++) {
         const f = dir === 'fwd' ? l0 + i : l0 - i;
-        const v = MG.transformPath(mm.type, startPath, T[i]);
+        const v = MG.transformPath(mm.type, base, T[i]);
         map.set(f, { f, v, e: 'linear' });
       }
       p.kf = [...map.values()].sort((x, y) => x.f - y.f);
@@ -121,28 +131,47 @@ export async function trackMask({ clipId, owner, maskId, method = 'psr', dir = '
 
 // ---- Warp Stabilizer analizi ----
 // Kareden kareye global hareketi (benzerlik) ölçer, kamera yolunu efektin stabData parametresine yazar.
-function estimateMotion(prev, cur, w, h) {
+const median = (a) => { if (!a.length) return 0; const b = a.slice().sort((x, y) => x - y); const m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+
+// ref -> cur benzerlik dönüşümü (ortalanmış küçük kare koordinatları). pred: önceki tahmin, arama merkezini belirler.
+// Medyan tabanlı sağlam kestirim + iç noktalarla en küçük kareler (hareketli nesneler ve kötü eşleşmeler elenir).
+function estimateMotion(ref, cur, w, h, pred = null) {
   const ci = integral(cur, w, h);
   const P = [], Q = [];
-  const gx = 6, gy = 4, r = 10, R = 24;
+  const gx = 8, gy = 5, r = 10, R = pred ? 12 : 24;
+  const [pa, pb, ptx, pty] = pred || [1, 0, 0, 0];
   for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
     const px = ((i + 0.5) / gx) * w, py = ((j + 0.5) / gy) * h;
-    const m = matchPatch(prev, cur, ci, w, h, px, py, r, px, py, R);
-    if (!m || m.score < 0.6) continue;
-    P.push([px - w / 2, py - h / 2]);
+    const X = px - w / 2, Y = py - h / 2;
+    const sx = pa * X - pb * Y + ptx + w / 2, sy = pb * X + pa * Y + pty + h / 2;
+    const m = matchPatch(ref, cur, ci, w, h, px, py, r, sx, sy, R);
+    if (!m || m.score < 0.7) continue;
+    P.push([X, Y]);
     Q.push([m.x - w / 2, m.y - h / 2]);
   }
-  if (P.length < 3) return null;
-  let T = fitSimilarity(P, Q);
-  // aykırıları (hareketli nesneler) at, yeniden uydur
-  const keepP = [], keepQ = [];
-  const c = Math.cos(T.rot) * T.s, s = Math.sin(T.rot) * T.s;
-  for (let k = 0; k < P.length; k++) {
-    const ex = c * P[k][0] - s * P[k][1] + T.tx - Q[k][0], ey = s * P[k][0] + c * P[k][1] + T.ty - Q[k][1];
-    if (Math.hypot(ex, ey) < 1.5) { keepP.push(P[k]); keepQ.push(Q[k]); }
+  if (P.length < 4) return null;
+  const ratios = [], angs = [];
+  const minD = Math.min(w, h) * 0.2;
+  for (let a = 0; a < P.length; a++) for (let b = a + 1; b < P.length; b++) {
+    const dpx = P[b][0] - P[a][0], dpy = P[b][1] - P[a][1], dqx = Q[b][0] - Q[a][0], dqy = Q[b][1] - Q[a][1];
+    const dp = Math.hypot(dpx, dpy);
+    if (dp < minD) continue;
+    ratios.push(Math.hypot(dqx, dqy) / dp);
+    let d = Math.atan2(dqy, dqx) - Math.atan2(dpy, dpx);
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    angs.push(d);
   }
-  if (keepP.length >= 3) T = fitSimilarity(keepP, keepQ);
-  return T;
+  const s0 = ratios.length ? median(ratios) : 1, r0 = angs.length ? median(angs) : 0;
+  const c0 = Math.cos(r0) * s0, n0 = Math.sin(r0) * s0;
+  const tx0 = median(P.map((p, k) => Q[k][0] - (c0 * p[0] - n0 * p[1]))), ty0 = median(P.map((p, k) => Q[k][1] - (n0 * p[0] + c0 * p[1])));
+  const iP = [], iQ = [];
+  for (let k = 0; k < P.length; k++) {
+    const ex = c0 * P[k][0] - n0 * P[k][1] + tx0 - Q[k][0], ey = n0 * P[k][0] + c0 * P[k][1] + ty0 - Q[k][1];
+    if (Math.hypot(ex, ey) < 1.0) { iP.push(P[k]); iQ.push(Q[k]); }
+  }
+  const T = iP.length >= 4 ? fitSimilarity(iP, iQ) : { s: s0, rot: r0, tx: tx0, ty: ty0 };
+  return { T, inliers: iP.length, total: P.length };
 }
 
 export async function analyzeStabilize({ clipId, fxId }) {
@@ -164,12 +193,24 @@ export async function analyzeStabilize({ clipId, fxId }) {
     status.textContent = t('Analyzing motion...');
     const sc = media.width / dec.w;
     const raw = [IDENT.slice()];
-    let C = IDENT.slice();
+    // Hareket ardışık kareler yerine bir referans (çapa) kareye göre ölçülür; böylece küçük hatalar her karede birikmez.
+    // Eşleşme zayıflayınca ya da 30 kare geçince çapa bir önceki kareye taşınır.
+    let anchor = 0, Cref = IDENT.slice(), rel = null;
+    const vec = (T) => [T.s * Math.cos(T.rot), T.s * Math.sin(T.rot), T.tx, T.ty];
     for (let i = 1; i < dec.frames.length; i++) {
       if (ctrl.signal.aborted) throw Object.assign(new Error('cancelled'), { cancelled: true });
-      const T = estimateMotion(dec.frames[i - 1], dec.frames[i], dec.w, dec.h);
-      const M = T ? [T.s * Math.cos(T.rot), T.s * Math.sin(T.rot), T.tx * sc, T.ty * sc] : IDENT.slice();
-      C = compose(M, C);
+      let r = estimateMotion(dec.frames[anchor], dec.frames[i], dec.w, dec.h, rel);
+      const weak = !r || r.inliers < Math.max(8, r.total * 0.5) || i - anchor > 30;
+      if (weak && anchor !== i - 1) {
+        anchor = i - 1;
+        Cref = raw[anchor].slice();
+        rel = null;
+        r = estimateMotion(dec.frames[anchor], dec.frames[i], dec.w, dec.h, null);
+      }
+      // eşleşme yoksa kamera bir önceki karedeki gibi kabul edilir
+      const Md = r ? vec(r.T) : (rel || [1, 0, 0, 0]);
+      rel = Md;
+      const C = compose([Md[0], Md[1], Md[2] * sc, Md[3] * sc], Cref);
       raw.push(C.map((v) => Math.round(v * 1e5) / 1e5));
       if (i % 4 === 0) { setP(0.35 + 0.65 * (i / dec.frames.length)); await new Promise((r) => setTimeout(r, 0)); }
     }

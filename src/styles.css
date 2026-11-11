@@ -322,3 +322,28 @@ button.icon.active { color: var(--accent-2); }
 .drag-ghost { position: fixed; pointer-events: none; z-index: 1200; background: rgba(45,140,235,.85); color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
 
 .es-panel .lum-slider { grid-template-columns: 150px 1fr 60px; }
+
+/* Efekt tarayıcısı: küçük resim ızgarası */
+.tree-children.fx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; padding: 6px 10px 10px 26px; }
+.tree-children.fx-grid.collapsed { display: none; }
+.fx-tile { display: flex; flex-direction: column; gap: 3px; cursor: grab; border-radius: 5px; padding: 3px; }
+.fx-tile:hover { background: #2a2a2a; }
+.fx-tile .fx-thumb { width: 100%; aspect-ratio: 16 / 9; height: auto; border-radius: 4px; background: #111; box-shadow: 0 0 0 1px #3a3a42; display: block; }
+.fx-tile:hover .fx-thumb { box-shadow: 0 0 0 2px var(--accent, #2d8ceb); }
+.fx-tile-name { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.tree-row .fx-icon.preset { background: linear-gradient(135deg, #e8a33c, #c34fa0); }
+
+/* Yazı tipi seçici */
+.font-picker { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; text-align: left; padding: 2px 8px; font-size: 13px; overflow: hidden; }
+.font-picker .fp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-picker .fp-caret { font-family: 'Segoe UI', sans-serif; color: var(--text-dim); font-size: 10px; }
+.fp-pop { position: fixed; z-index: 10000; width: 260px; display: flex; flex-direction: column; background: #232327; border: 1px solid #3a3a42; border-radius: 6px; box-shadow: 0 8px 28px rgba(0,0,0,0.55); padding: 6px; gap: 6px; }
+.fp-pop input { width: 100%; box-sizing: border-box; }
+.fp-list { flex: 1; overflow-y: auto; }
+.fp-item { padding: 4px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-item:hover { background: #2f3a4a; }
+.fp-item.sel { background: #2a4a6e; }
+.fp-sample { font-size: 17px; line-height: 1.35; color: var(--text); }
+.fp-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); padding: 6px 8px 2px; }
+
+.tree-row .fx-icon.anim { background: linear-gradient(135deg, #3ec6e0, #7472c4); }

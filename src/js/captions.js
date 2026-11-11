@@ -5,7 +5,7 @@ export const DEFAULT_CAPTION_STYLE = {
   font: 'Segoe UI',
   size: 54, // 1080p'ye göre piksel; diğer çözünürlüklerde orantılanır
   color: '#ffffff',
-  bold: true,
+  bold: false,
   italic: false,
   outline: 0,
   outlineColor: '#000000',

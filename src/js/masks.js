@@ -1,6 +1,7 @@
 // Maske yardımcıları (Efekt Kontrolleri ve Program monitörü ortak kullanır)
 import { store } from './store.js';
 import { createMask } from './model.js';
+import * as MG from './maskGeom.js';
 
 // owner: 'clip' (opaklık maskeleri) veya efekt id'si
 export function maskList(clip, owner, create = false) {
@@ -43,6 +44,19 @@ export function addMask(clipId, owner, type, sw, sh) {
   store.ui.maskPen = type === 'pen' ? { clipId, owner, maskId: created.id } : null;
   store.emit('selection');
   return created;
+}
+
+// Hazır şekilli maske (kalp, yıldız, doğrusal...)
+export function addShapeMask(clipId, owner, shape, sw, sh) {
+  const { type, path } = MG.shapePath(shape, sw, sh);
+  const m = addMask(clipId, owner, type, sw, sh);
+  if (!m) return null;
+  store.commit('Mask Shape', (p) => {
+    const c = p.sequences[p.activeSequenceId].clips[clipId];
+    const mm = maskList(c, owner, true)?.find((x) => x.id === m.id);
+    if (mm) { mm.path = { v: path, kf: null }; mm.feather = { v: shape === 'linear' || shape === 'mirror' ? 40 : 6, kf: null }; mm.name = MG.MASK_SHAPES.find((x) => x[0] === shape)?.[1] || mm.name; }
+  });
+  return m;
 }
 
 export function removeMask(clipId, owner, maskId) {

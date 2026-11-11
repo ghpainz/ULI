@@ -231,6 +231,7 @@ export function multicamGridLayers(project, seq, f) {
     'mc_program', program.x + program.w / 2, program.y + program.h / 2, program.scale, seq.width, seq.height);
   const pit = makeItem(project, seq, pc, f);
   pit.nestedFrame = f;
+  pit.withCaptions = true; // program kutusunda altyazılar da görünsün
   layers.push({ type: 'clip', track: cells.length, item: pit });
   return { layers, cells, program, clip: c, nested };
 }

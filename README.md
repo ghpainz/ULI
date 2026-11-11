@@ -37,6 +37,14 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 - Lumetri Color: beyaz dengesi, pozlama, kontrast, parlak/gölge/beyaz/siyah, doygunluk, canlılık, .cube LUT, renk tekerlekleri, vinyet, HSL ikincil düzeltme (yalnız seçilen rengi düzelt, maskeyi göster)
 - Önce/Sonra karşılaştırması: Program monitöründeki karşılaştırma düğmesi (sol yarı efektsiz, sağ yarı efektli)
 - Efektler: Gauss/Yönlü bulanıklık, keskinleştirme, Ultra Key (yeşil perde), kırpma, çevirme, ayna, mozaik, gürültü, posterleştirme, renk tonu, rengi bırak, siyah-beyaz, ters çevirme, parlaklık/kontrast, Gölge, Parlama, Kontur, Lens Bozulması, Kromatik Sapma, Dalga Çarpıtma, Kenarları Bul, Film Greni
+- Efektler paneli: liste veya küçük resim görünümü (her efekt/geçiş/ön ayar örnek bir görsel üzerinde canlı önizlenir, üzerine gelince canlanır), arama, Favoriler (sağ tık > Favorilere Ekle)
+- Ön ayarlar: 13 renk görünümü (Sinematik Turkuaz & Turuncu, Altın Saat, Soğuk Mavi, Noir, Mat Film...), 10 stilize görünüm (Vintage, Cyberpunk, Retro VHS, Eski Film, Çizgi Roman, Gece Görüşü...) ve 8 hareket ön ayarı (Elde Kamera, Deprem, Ritim Yakınlaştırma, Yavaş Yakınlaşma/Uzaklaşma, Sinematik Bantlar...). Efekt Kontrolleri'nde efekt başlığına sağ tık > Ön Ayar Olarak Kaydet ile kendi ön ayarlarınızı oluşturun
+- Eko / İz Bırakma: hareketli içeriğin arkasında iz bırakır (oynatırken ve dışa aktarırken önceki kareler birikir)
+- Hareket efektleri: Kamera Sallanması, Vuruşlu Yakınlaştırma (ritme göre), Ken Burns, Radyal (zoom/dönme) Bulanıklık
+- Retro: VHS, Eski Film (sepya, çizik, toz, titreme), Dijital Bozulma (glitch), CRT Ekran, Flaş Işığı
+- Işık: Lens Parlaması, Işık Sızıntıları, Bokeh Işıkları, Işık Huzmeleri, Neon Kenarlar, Vinyet
+- Çarpıtma ve stil: Şişirme/Balık Gözü, Girdap, Kaleydoskop, Ayna Karoları, Türbülans, Dalgalanma, Çift Ton, Çizgi Film, Yarım Ton, Kabartma, Kurşun Kalem, Renk Haritası (termal, gece görüşü, röntgen...), Sinematik Bantlar
+- Hareket bulanıklığı: Efekt Kontrolleri > Hareket > Hareket Bulanıklığı. Keyframe'li konum/ölçek/döndürme hareketini deklanşör açısına göre bulanıklaştırır
 - Warp Stabilizer: Efekt Kontrolleri'nde "Analiz Et" ile titrek çekimi sabitler (Konum/Ölçek/Döndürme veya yalnız Konum, yumuşaklık, otomatik kırpma-ölçekleme)
 - Maskeler: elips, 4 noktalı çokgen ve kalemle bezier eğri; tüy, opaklık, genişleme, ters çevirme, Ekle/Çıkar/Kesişim modları, keyframe'li maske yolu. Opaklığa (klibin bir bölgesini göster) veya tek bir efekte (ör. yalnızca yüzü bulanıklaştır) uygulanır
 - Program monitöründe maske düzenleme: köşeyi sürükle, içinden sürükleyip taşı, kalemle tıkla = köşe / tıkla-sürükle = eğri noktası, tutamağı sürükle (Alt ile tutamağı kır), Alt+köşe sürükle = eğri tutamağı çek (çokgeni bezier'e çevirir), Alt+tık = köşe noktasına döndür, Ctrl+tık kenar = nokta ekle, Ctrl+tık köşe = nokta sil, Shift ile elipsi orantılı boyutlandır, Esc ile kalemi iptal et
@@ -47,13 +55,18 @@ FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 - Lumetri Kapsamları: Dalga formu (RGB/Luma), RGB Parade, Vektörskop YUV (renk hedefleri ve ten çizgisi), Histogram
 - Nested (iç içe) sekanslar: seçili klipleri Klip > İç İçe Yerleştir ile tek klibe çevir veya Proje panelinden bir sekansı zaman çizelgesine sürükle. Nested klibe hareket/opaklık/efekt/hız uygulanabilir, çift tıklayınca içine girilir, istenen derinlikte iç içe olabilir (sekans kendi içine konamaz)
 - Temel Grafikler paneli: çok katmanlı grafik klipleri (metin, dikdörtgen, elips, çizgi), katman başına giriş/çıkış animasyonu (soluklaşma, kayma, ölçek, zıplama, daktilo, silme), 8 hazır şablon (alt bant, başlık, abone ol, sosyal medya etiketi, alıntı, bölüm başlığı, bitiş kartı)
+- Kinetik yazı: grafik metin katmanlarında harf harf animasyonlar (Belirme, Fırlama, Yükselme, Düşme, Bulanıktan Netleşme, Rastgele, Kelime Kelime, Glitch) ve sürekli döngüler (Dalga, Sıçrama, Gökkuşağı, Nabız, Sallanma, Süzülme, Salınım, Titreme). Yeni katmanlar: Emoji, İlerleme Çubuğu, Geri Sayım. 10 yeni şablon (Hareketli Başlık, Kelime Kelime, Neon Tabela, Zıplayan Yazı, Glitch Başlık, Gökkuşağı Yazı, Geri Sayım, İlerleme Çubuğu, Emoji, Beğeni Kalbi)
+- Yazı efektleri (Temel Grafikler > Düzenle): neon parlama (renkli ışıma + beyaz çekirdek, Parlama Nabzı döngüsü), 2-3 renkli renk geçişi, 2 ek dış kontur, 3B derinlik, eğri üstünde yazı. Gözat sekmesinde 20 hazır yazı stili (Neon Pembe/Mavi/Yeşil/Mor, Neon Tabela, Ateş, Altın, Krom, Buz, Retro 80'ler, Çizgi Roman, Kalın Kapak Yazısı, 3B Blok, Çift Kontur, Gün Batımı, Okyanus, Glitch RGB, Zarif, Kavisli Başlık, Sade)
+- İçinde video olan yazı: "İçinde Video Olan Yazı" şablonu ya da herhangi bir klibin karışım modunu "Şablon Alfa" yapın; alttaki video yalnız yazının içinde görünür ("Siluet Alfa" tersi)
 - Ayar katmanları, metin (başlık) klipleri, renk fonları
-- 27 video geçişi (Dönme, Bulanık Geçiş, Zoom Blur, Whip Pan, Işık Sızıntısı, Glitch dahil) ve 3 ses geçişi; geçiş hizalaması (kesmede ortala/başla/bitir) (Ctrl+D / Ctrl+Shift+D varsayılan geçiş)
+- 47 video geçişi (Yumuşak Yakınlaşma/Uzaklaşma, Flaş, Mürekkep, Film Yanığı, Kalp/Yıldız/Elmas/Saat silme, Küp Dönüşü, Kapı Açılışı, Dönme, Whip Pan, Glitch dahil) ve 3 ses geçişi; geçiş hizalaması (kesmede ortala/başla/bitir) (Ctrl+D / Ctrl+Shift+D varsayılan geçiş)
 - Hız/süre (ters oynatma dahil), kare dondurma
 
 **Ses**
 - Klip ses seviyesi ve pan keyframe'leri, iz mikseri (fader, pan, M/S), ana çıkış, ses ölçerleri
 - Temel Ses paneli: klibi Diyalog/Müzik/Efekt/Ortam olarak işaretle; ses yüksekliğini hedef LUFS'a otomatik eşle, gürültü/uğultu/sızıltı onarımı, konuşmayı güçlendirme, müziği diyaloğun altında otomatik kısma (ducking)
+- Vuruş algılama: müzik klibini seçip Sekans > Vuruşları Algıla; tempo (BPM) bulunur ve her vuruşa işaretçi konur. Vuruşa Göre Otomatik Kes: seçili klipleri vuruşlarda böler veya seçili kliplerden her 1/2/4/8 vuruşta bir değişen ritmik montaj oluşturur
+- Ses Değiştirici: Sincap, Helyum, Kalın Ses, Canavar, Robot, Fısıltı, Telefon, Radyo, Megafon, Mağara Yankısı veya özel perde (±12 yarım ton)
 - Seslendirme kaydı (Ctrl+Alt+R): mikrofondan oynatma kafasına kayıt
 - Sese göre senkron: iki kaydı (ör. kamera sesi ve harici mikrofon) otomatik hizala
 - Ses efektleri: Yükselt (Amplify), Kompresör, 3 Bantlı Ekolayzer, Yüksek/Alçak Geçiren, Gecikme (Delay), Kanal (sol/sağ doldur, değiştir, mono), Yankı (Reverb), Uğultu Giderici, Gürültü Azaltıcı (gürültü tabanını otomatik ölçer), De-Esser. Gürültü azaltma ve de-esser önizlemede bir kez işlenip önbelleğe alınır. Efekt parametreleri sabittir (keyframe yok); nested ses kliplerine doğrudan ses efekti uygulanmaz, efekti iç sekanstaki kliplere uygulayın
