@@ -27,6 +27,7 @@ export function newLayer(type, W, H, extra = {}) {
   if (type === 'text') Object.assign(base, { name: 'Text', text: 'Metin', font: 'Segoe UI', size: Math.round(H * 0.07), bold: false, italic: false, align: 'center', tracking: 0, lineHeight: 1.15 });
   if (type === 'rect') Object.assign(base, { name: 'Rectangle', fill: '#2d8ceb' });
   if (type === 'ellipse') Object.assign(base, { name: 'Ellipse', w: Math.round(H * 0.15), h: Math.round(H * 0.15), fill: '#e0533d' });
+  if (type === 'svg') Object.assign(base, { name: 'Shape', w: Math.round(H * 0.2), h: Math.round(H * 0.2), fill: '#ffffff', path: 'M2 10h13V5l7 7-7 7v-5H2z' });
   if (type === 'line') Object.assign(base, { name: 'Line', h: Math.max(2, Math.round(H * 0.005)), fill: '#ffffff' });
   if (type === 'progress') Object.assign(base, { name: 'Progress Bar', y: H * 0.95, w: Math.round(W * 0.9), h: Math.max(4, Math.round(H * 0.012)), fill: '#e62117', stroke: '#ffffff', strokeWidth: 0, trackOpacity: 30, radius: Math.round(H * 0.006), animIn: { type: 'none', dur: 15 }, animOut: { type: 'none', dur: 12 } });
   if (type === 'countdown') Object.assign(base, { name: 'Countdown', text: '', font: 'Segoe UI', size: Math.round(H * 0.12), bold: true, italic: false, align: 'center', tracking: 0, lineHeight: 1.15, countFrom: 10, countFormat: 'ss', animIn: { type: 'pop', dur: 12 } });
@@ -216,6 +217,7 @@ function textData(L) {
   };
 }
 
+const svgCache = new Map();
 const textCache = new Map();
 function cachedText(L, text) {
   const td = { ...textData(L), text };
@@ -273,6 +275,19 @@ export function renderGraphic(canvas, graphic, local, duration, W, H, fps = 30) 
       if (s.reveal < 1) { ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w * s.reveal, h); ctx.clip(); }
       if (L.shadow) {
         ctx.shadowColor = L.shadowColor; ctx.shadowBlur = L.shadowBlur; ctx.shadowOffsetX = L.shadowDist; ctx.shadowOffsetY = L.shadowDist;
+      }
+      if (L.type === 'svg') {
+        // vektör çıkartma: 24×24 SVG yolu katman kutusuna ölçeklenir
+        let p2 = svgCache.get(L.path);
+        if (!p2) { try { p2 = new Path2D(L.path || ''); } catch (e) { p2 = new Path2D(); } svgCache.set(L.path, p2); }
+        ctx.scale(w / 24, h / 24);
+        ctx.translate(-12, -12);
+        const rule = L.evenodd ? 'evenodd' : 'nonzero';
+        if ((L.fillOpacity ?? 100) > 0) { ctx.fillStyle = rgba(L.fill, (L.fillOpacity ?? 100) / 100); ctx.fill(p2, rule); }
+        ctx.shadowColor = 'transparent';
+        if (L.strokeWidth > 0) { ctx.strokeStyle = L.stroke; ctx.lineJoin = 'round'; ctx.lineWidth = (L.strokeWidth * 24) / Math.max(1, Math.max(Math.abs(w), Math.abs(h))); ctx.stroke(p2); }
+        ctx.restore();
+        continue;
       }
       ctx.beginPath();
       if (L.type === 'ellipse') ctx.ellipse(0, 0, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);

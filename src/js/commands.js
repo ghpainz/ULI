@@ -1041,6 +1041,8 @@ export function initCommands() {
   win('history', 'History', 'Shift+0');
   def('window.scopes', 'Lumetri Scopes', () => showPanel('scopes'));
   def('window.captions', 'Captions', () => showPanel('captions'));
+  def('window.audioLibrary', 'Audio Library', () => showPanel('audioLibrary'));
+  def('audio.tts', 'Text to Speech...', () => showPanel('audioLibrary'));
   def('window.graphics', 'Essential Graphics', () => showPanel('graphics'));
   def('window.essentialSound', 'Essential Sound', () => showPanel('essentialSound'));
   def('audio.record', 'Record Voiceover', async () => { const A = await import('./audioTools.js'); A.toggleRecording(); }, { shortcut: 'Ctrl+Alt+R', enabled: hasSeq });
@@ -1149,7 +1151,7 @@ export function menuStructure() {
       { ...item('sequence.snap'), checked: () => store.ui.snapping }, { ...item('sequence.linkedSelection'), checked: () => store.ui.linkedSelection }, '-',
       item('sequence.addTracks'), item('sequence.deleteEmptyTracks'), '-',
       item('caption.add'), item('caption.import'), item('caption.export'), '-',
-      item('audio.record'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'),
+      item('audio.record'), item('audio.tts'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'),
     ] },
     { label: t('Markers'), items: () => [
       item('mark.in'), item('mark.out'), item('mark.clip'), item('mark.selection'), '-',
@@ -1158,7 +1160,7 @@ export function menuStructure() {
       item('marker.add'), item('marker.next'), item('marker.prev'), item('marker.edit'), item('marker.clearCurrent'), item('marker.clearAll'),
     ] },
     { label: t('Window'), items: () => [
-      item('window.project'), item('window.source'), item('window.program'), item('window.timeline'), item('window.effectControls'), item('window.effects'), item('window.lumetri'), item('window.scopes'), item('window.graphics'), item('window.essentialSound'), item('window.captions'), item('window.audioMixer'), item('window.markers'), item('window.history'), '-',
+      item('window.project'), item('window.source'), item('window.program'), item('window.timeline'), item('window.effectControls'), item('window.effects'), item('window.lumetri'), item('window.scopes'), item('window.graphics'), item('window.essentialSound'), item('window.captions'), item('window.audioLibrary'), item('window.audioMixer'), item('window.markers'), item('window.history'), '-',
       item('window.maximizeFrame'), item('window.resetLayout'), item('window.fullscreen'), '-',
       item('window.toggleLang'), item('window.reload'), item('window.devtools'),
     ] },

@@ -7,6 +7,7 @@ import { TEMPLATES, makeTemplate, renderGraphic, newLayer, ANIMS, ANIM_LABELS, L
 import * as E from '../editing.js';
 import { scrubNumber } from './effectControls.js';
 import { fontPicker } from '../ui/fontPicker.js';
+import { EMOJI, SHAPES, BADGES, stickerLayers } from '../stickers.js';
 
 // Hizalama düğmeleri (kareye göre)
 export const ALIGN_BUTTONS = [
@@ -90,7 +91,54 @@ export class GraphicsPanel {
       sgrid.appendChild(card);
     }
     this.root.append(grid, blank, el('div', { class: 'ec-section-title', style: { marginTop: '6px' } }, el('span', { class: 'title', text: t('Text Styles') })), sgrid);
+    this._stickers();
     if (!store.seq) this.root.prepend(el('div', { class: 'empty-hint', text: t('Create a sequence first') }));
+  }
+
+  // Çıkartmalar: kategori çipleri + ızgara (tıkla = oynatma kafasına ekle)
+  _stickers() {
+    const cats = [...Object.keys(EMOJI).map((k) => ['emoji:' + k, k]), ['shapes', 'Shapes'], ['badges', 'Badges']];
+    if (!this.stickerCat) this.stickerCat = 'badges';
+    const chips = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '4px 8px' } });
+    for (const [id, label] of cats) {
+      const b = el('button', { text: t(label), class: this.stickerCat === id ? 'primary' : '', style: { padding: '1px 8px', fontSize: '11px' } });
+      b.addEventListener('click', () => { this.stickerCat = id; this.render(); });
+      chips.appendChild(b);
+    }
+    const grid = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))', gap: '6px', padding: '6px 8px 12px' } });
+    const tile = (content, title, onAdd) => {
+      const tl = el('div', { class: 'grid-item', title: title + ' — ' + t('Click to add at the playhead'), style: { height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#1d2330' } }, content);
+      tl.addEventListener('click', onAdd);
+      grid.appendChild(tl);
+    };
+    const thumb = (layers) => { const cv = el('canvas', { width: 128, height: 128, style: { width: '60px', height: '60px' } }); renderGraphic(cv, { layers }, 40, 150, 128, 128); return cv; };
+    if (this.stickerCat.startsWith('emoji:')) {
+      for (const e of EMOJI[this.stickerCat.slice(6)].split(' ').filter(Boolean)) tile(el('span', { text: e, style: { fontSize: '34px', fontFamily: '"Segoe UI Emoji", sans-serif' } }), e, () => this.insertSticker('emoji', e));
+    } else if (this.stickerCat === 'shapes') {
+      for (const sh of SHAPES) tile(thumb(stickerLayers('shape', sh.id, 128, 128).map((L) => ({ ...L, animIn: { type: 'none', dur: 1 }, loop: null }))), t(sh.name), () => this.insertSticker('shape', sh.id));
+    } else {
+      for (const b of BADGES) tile(thumb(stickerLayers('badge', b.id, 128 * 1.6, 128).map((L) => ({ ...L, x: L.x / 1.6, w: (L.w || 0) / 1.6, size: L.size ? L.size / 1.25 : L.size, animIn: { type: 'none', dur: 1 }, delay: 0, loop: null }))), t(b.name), () => this.insertSticker('badge', b.id));
+    }
+    this.root.append(el('div', { class: 'ec-section-title', style: { marginTop: '6px' } }, el('span', { class: 'title', text: t('Stickers') })), chips, grid);
+  }
+
+  insertSticker(kind, id) {
+    const s = store.seq;
+    if (!s) return;
+    const f = app.engine.currentFrame;
+    const dur = Math.round(3 * s.fps);
+    const layers = stickerLayers(kind, id, s.width, s.height);
+    let cid = null;
+    store.commit('Add Sticker', (p) => {
+      const sq = p.sequences[p.activeSequenceId];
+      const tr = E.freeVideoTrackAbove(sq, f, dur, 1);
+      cid = E.placeSynthetic(sq, 'graphic', { start: f, duration: dur, track: tr, name: kind === 'emoji' ? id : t((kind === 'shape' ? SHAPES : BADGES).find((x) => x.id === id)?.name || 'Sticker'), graphic: { layers } }).id;
+    });
+    store.select([cid]);
+    this.tab = 'edit';
+    this.selLayer = layers[layers.length - 1]?.id || null;
+    this.render();
+    app.program?.updateOverlay();
   }
 
   // seçili grafik klibindeki seçili metin katmanına stil uygula; yoksa bu stilde yeni yazı ekle
@@ -189,7 +237,7 @@ export class GraphicsPanel {
     for (const L of g.layers.slice().reverse()) {
       const eye = el('span', { text: L.hidden ? '◌' : '◉', style: { cursor: 'pointer', color: L.hidden ? '#666' : '#aaa', width: '16px' } });
       eye.addEventListener('click', (e) => { e.stopPropagation(); const id = L.id; this._upd('Toggle Layer', (gg) => { const x = gg.layers.find((y) => y.id === id); x.hidden = !x.hidden; }); });
-      const icon = { text: 'T', rect: '▭', ellipse: '◯', line: '—', progress: '▬', countdown: '⏱' }[L.type];
+      const icon = { text: 'T', rect: '▭', ellipse: '◯', line: '—', progress: '▬', countdown: '⏱', svg: '★' }[L.type];
       const row = el('div', { class: 'tree-row' + (L.id === this.selLayer ? ' sel' : '') }, eye, el('span', { text: icon, style: { width: '14px', color: '#888' } }),
         el('span', { text: L.type === 'text' ? (L.text || '').split('\n')[0].slice(0, 30) || L.name : t(L.name) }));
       row.addEventListener('click', () => { this.selLayer = L.id; this.render(); app.program?.updateOverlay(); });

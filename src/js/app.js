@@ -21,6 +21,7 @@ import { EffectsPanel, LumetriPanel, AudioMixerPanel, MarkersPanel, HistoryPanel
 import { openExportDialog, exportFrameDialog } from './exportDialog.js';
 import { ScopesPanel } from './panels/scopes.js';
 import { CaptionsPanel } from './panels/captionsPanel.js';
+import { AudioLibraryPanel } from './panels/audioLibrary.js';
 import { GraphicsPanel } from './panels/graphicsPanel.js';
 import { EssentialSoundPanel } from './panels/essentialSound.js';
 
@@ -261,6 +262,7 @@ async function boot() {
   gLB.add(new MarkersPanel());
   gLB.add(new HistoryPanel());
   gLB.add(new CaptionsPanel());
+  gLB.add(new AudioLibraryPanel());
   gTL.add(new TimelinePanel());
   initSplitters();
   restoreTabs();
