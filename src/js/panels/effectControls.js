@@ -11,6 +11,7 @@ import { saveUserPreset, applyPreset, applyClipAnim } from '../presets.js';
 import { fontPicker } from '../ui/fontPicker.js';
 import { ANIM_IN, ANIM_OUT, ANIM_COMBO } from '../clipAnim.js';
 import { SPEED_CURVES, applySpeedCurve } from '../speedCurves.js';
+import { TIME_INTERP, CONTENT_BLUR } from '../commands.js';
 import { ALIGN_BUTTONS } from './graphicsPanel.js';
 import { maskList, findMask, addMask, removeMask, addShapeMask } from '../masks.js';
 import * as MG from '../maskGeom.js';
@@ -201,6 +202,20 @@ export class EffectControlsPanel {
           const b = el('button', { text: t('Speed/Duration...'), style: { padding: '1px 8px' } });
           b.addEventListener('click', () => app.commands.run('clip.speed'));
           this.props.appendChild(el('div', { class: 'ec-row' }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Clip Speed') }), el('div', { class: 'pval' }, el('span', { text: (c.reverse ? '-' : '') + Math.round(c.speed * 10000) / 100 + ' %' }), b)));
+          if (c.kind === 'media' && c.type === 'video') {
+            const setC = (label, fn) => store.commit(label, (p) => { const cc = p.sequences[p.activeSequenceId].clips[c.id]; if (cc) fn(cc); });
+            const ti = el('select');
+            for (const [v, l] of TIME_INTERP) ti.appendChild(el('option', { value: v, text: t(l) }));
+            ti.value = c.timeInterp || 'sample';
+            ti.addEventListener('change', () => setC('Time Interpolation', (cc) => { cc.timeInterp = ti.value === 'sample' ? undefined : ti.value; }));
+            const cb = el('select');
+            for (const [v, l] of CONTENT_BLUR) cb.appendChild(el('option', { value: v, text: t(l) }));
+            cb.value = String(c.contentBlur || 0);
+            cb.addEventListener('change', () => setC('Video Motion Blur', (cc) => { cc.contentBlur = +cb.value || undefined; }));
+            const tip = t('Applied in export and in rendered previews (Enter).');
+            this.props.appendChild(el('div', { class: 'ec-row', title: tip }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Time Interpolation') }), el('div', { class: 'pval' }, ti)));
+            this.props.appendChild(el('div', { class: 'ec-row', title: tip }, el('span', { class: 'sw' }), el('span', { class: 'pname', text: t('Video Motion Blur') }), el('div', { class: 'pval' }, cb)));
+          }
           if (c.props.timeRemap && !c.reverse) {
             const cs = el('select', { style: { maxWidth: '150px' } });
             cs.appendChild(el('option', { value: '', text: '—' }));

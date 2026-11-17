@@ -338,6 +338,9 @@ function currentEditPoints() {
 }
 
 // Hız/Süre diyaloğu
+export const TIME_INTERP = [['sample', 'Frame Sampling'], ['blend', 'Frame Blending'], ['flow', 'Optical Flow (smooth)']];
+export const CONTENT_BLUR = [[0, 'Off'], [1, 'Light'], [2, 'Strong']];
+
 async function speedDialog() {
   const clips = store.selectedClips().filter((c) => c.kind === 'sequence' || (c.kind === 'media' && c.mediaId && store.project.media[c.mediaId]?.type !== 'image'));
   if (!clips.length) return;
@@ -348,6 +351,7 @@ async function speedDialog() {
   durIn.value = framesToTC(c0.duration, s.fps);
   const rev = el('input', { type: 'checkbox' }); rev.checked = c0.reverse;
   const ripple = el('input', { type: 'checkbox' });
+  const interp = selectEl(TIME_INTERP.map(([v, l]) => ({ value: v, label: t(l) })), c0.timeInterp || 'sample');
   const srcFrames = (c0.duration * c0.speed);
   sp.addEventListener('input', () => { durIn.value = framesToTC(Math.round(srcFrames / (+sp.value / 100)), s.fps); });
   durIn.addEventListener('change', () => { const f = parseTC(durIn.value, s.fps); if (f) sp.value = Math.round((srcFrames / f) * 10000) / 100; });
@@ -355,11 +359,16 @@ async function speedDialog() {
     el('label', { text: t('Speed') + ' (%)' }), sp,
     el('label', { text: t('Duration') }), durIn,
     el('label', { text: t('Reverse Speed') }), rev,
+    el('label', { text: t('Time Interpolation') }), interp,
     el('label', { text: t('Ripple Edit, Shifting Trailing Clips') }), ripple,
   );
-  const r = await modal({ title: t('Clip Speed / Duration'), body: grid, buttons: [{ label: t('Cancel'), value: null }, { label: t('OK'), primary: true, onClick: () => ({ speed: +sp.value, reverse: rev.checked, ripple: ripple.checked }) }] });
+  const r = await modal({ title: t('Clip Speed / Duration'), body: grid, buttons: [{ label: t('Cancel'), value: null }, { label: t('OK'), primary: true, onClick: () => ({ speed: +sp.value, reverse: rev.checked, ripple: ripple.checked, interp: interp.value }) }] });
   if (!r) return;
-  commitSeq('Speed/Duration', (s2, p) => E.setSpeed(s2, p, clips.map((c) => c.id), r.speed, { reverse: r.reverse, ripple: r.ripple }));
+  commitSeq('Speed/Duration', (s2, p) => {
+    E.setSpeed(s2, p, clips.map((c) => c.id), r.speed, { reverse: r.reverse, ripple: r.ripple });
+    for (const c of clips) if (s2.clips[c.id] && s2.clips[c.id].type === 'video') s2.clips[c.id].timeInterp = r.interp === 'sample' ? undefined : r.interp;
+  });
+  if (r.interp !== 'sample' && r.speed < 100) toast(t('Smooth slow motion is applied in export and in rendered previews (Enter).'), 'info', 5000);
 }
 
 async function editMarker(id) {
@@ -547,7 +556,7 @@ function shortcutsDialog() {
 
 function aboutDialog() {
   const p = app.paths;
-  alertDialog(`ULI Premiere ${p.appVersion}\n\n${t('A Premiere Pro style video editor.')}\nElectron + WebGL2 + FFmpeg\n\nFFmpeg: ${p.ffmpeg}\n${t('Hardware encoding')} (NVENC): ${app.ffInfo?.nvenc ? t('Available') : t('Not available')}`, t('About'));
+  alertDialog(`ULI ${p.appVersion}\n\n${t('A video editor as clean as Premiere Pro and as rich as CapCut.')}\nElectron + WebGL2 + FFmpeg\n\nFFmpeg: ${p.ffmpeg}\n${t('Hardware encoding')} (NVENC): ${app.ffInfo?.nvenc ? t('Available') : t('Not available')}`, t('About'));
 }
 
 async function importDialog() {
@@ -1190,7 +1199,7 @@ export function initCommands() {
 
   // Yardım
   def('help.shortcuts', 'Keyboard Shortcuts', () => shortcutsDialog(), { shortcut: 'F1' });
-  def('help.about', 'About ULI Premiere', () => aboutDialog());
+  def('help.about', 'About ULI', () => aboutDialog());
 
   applyShortcutOverrides();
   app.commandsReady = true;

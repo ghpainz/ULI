@@ -1,8 +1,26 @@
-// ULI Premiere - Electron ana süreç
+// ULI - Electron ana süreç
 const { app, BrowserWindow, protocol, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
+
+// Eski adla ("ULI Premiere") kaydedilmiş ayarları, proxy'leri ve otomatik kayıtları yeni ada taşı.
+// Uygulama adı değişince Windows'taki veri klasörü de değişir; bu yüzden ilk açılışta bir kez yapılır.
+(function migrateUserData() {
+  try {
+    const newDir = app.getPath('userData');
+    const oldDir = path.join(app.getPath('appData'), 'ULI Premiere');
+    if (oldDir === newDir || !fs.existsSync(oldDir) || fs.existsSync(path.join(newDir, 'settings.json'))) return;
+    try {
+      if (!fs.existsSync(newDir)) { fs.renameSync(oldDir, newDir); return; }
+    } catch (e) { /* eski sürüm açıksa klasör kilitli olabilir: önemli dosyaları kopyala */ }
+    fs.mkdirSync(newDir, { recursive: true });
+    for (const name of ['settings.json', 'autosave']) {
+      const src = path.join(oldDir, name), dst = path.join(newDir, name);
+      if (fs.existsSync(src) && !fs.existsSync(dst)) fs.cpSync(src, dst, { recursive: true });
+    }
+  } catch (e) { console.warn('userData migration failed', e); }
+})();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -120,7 +138,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#1a1a1a',
-    title: 'ULI Premiere',
+    title: 'ULI',
     show: false,
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {

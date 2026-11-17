@@ -40,7 +40,7 @@ export async function saveProject(saveAs = false) {
     const r = await ipc.invoke('dialog:save', {
       title: t('Save Project'),
       defaultPath: file || nodePath.join(app.paths.documents, (store.project.name || 'Untitled') + '.' + PROJECT_EXT),
-      filters: [{ name: 'ULI Premiere Project', extensions: [PROJECT_EXT] }],
+      filters: [{ name: 'ULI Project', extensions: [PROJECT_EXT] }],
     });
     if (r.canceled || !r.filePath) return false;
     file = r.filePath;
@@ -64,7 +64,7 @@ export async function saveCopy() {
   const r = await ipc.invoke('dialog:save', {
     title: t('Save a Copy'),
     defaultPath: nodePath.join(app.paths.documents, (store.project.name || 'Untitled') + ' copy.' + PROJECT_EXT),
-    filters: [{ name: 'ULI Premiere Project', extensions: [PROJECT_EXT] }],
+    filters: [{ name: 'ULI Project', extensions: [PROJECT_EXT] }],
   });
   if (r.canceled || !r.filePath) return;
   nodeFs.writeFileSync(r.filePath, serialize());
@@ -82,7 +82,7 @@ export async function confirmDiscard() {
 export function loadProjectFile(file) {
   const text = nodeFs.readFileSync(file, 'utf8');
   const p = JSON.parse(text);
-  if (p.app !== 'ULIPremiere') throw new Error(t('Not a ULI Premiere project'));
+  if (p.app !== 'ULIPremiere') throw new Error(t('Not a ULI project'));
   return normalizeProject(p);
 }
 
@@ -92,7 +92,7 @@ export async function openProject(file = null) {
     const r = await ipc.invoke('dialog:open', {
       title: t('Open Project'),
       properties: ['openFile'],
-      filters: [{ name: 'ULI Premiere Project', extensions: [PROJECT_EXT] }],
+      filters: [{ name: 'ULI Project', extensions: [PROJECT_EXT] }],
     });
     if (r.canceled || !r.filePaths.length) return false;
     file = r.filePaths[0];
@@ -124,7 +124,7 @@ export async function newProject() {
 
 export function updateTitle() {
   const name = store.projectPath ? nodePath.basename(store.projectPath) : t('Untitled');
-  ipc.invoke('win:title', (store.dirty ? '● ' : '') + name + ' — ULI Premiere');
+  ipc.invoke('win:title', (store.dirty ? '● ' : '') + name + ' — ULI');
 }
 
 // ---- Otomatik kaydetme ----

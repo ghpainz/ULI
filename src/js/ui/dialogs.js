@@ -65,7 +65,7 @@ export function confirmDialog(message, { title = t('Confirm'), ok = t('OK'), can
   return modal({ title, body: el('div', { style: { whiteSpace: 'pre-wrap', maxWidth: '520px' }, text: message }), buttons });
 }
 
-export function alertDialog(message, title = 'ULI Premiere') {
+export function alertDialog(message, title = 'ULI') {
   return modal({ title, body: el('div', { style: { whiteSpace: 'pre-wrap', maxWidth: '560px', userSelect: 'text' }, text: message }), buttons: [{ label: t('OK'), primary: true, value: true }] });
 }
 

@@ -1,14 +1,14 @@
-# ULI Premiere
+# ULI
 
 Premiere Pro tarzı, Windows için masaüstü video kurgu uygulaması (Electron + WebGL2 + FFmpeg).
 
 ## Kurulum
 
-`dist\ULI Premiere Setup 0.1.0.exe` dosyasını çalıştırın. Kurulum Başlat menüsüne ve masaüstüne kısayol ekler; `.ulip` proje dosyalarına çift tıklayınca uygulama açılır. Kurulum dosyası imzasız olduğu için Windows SmartScreen "Bilinmeyen yayımcı" uyarısı gösterebilir: "Ek bilgi" > "Yine de çalıştır".
+`dist\ULI Setup 0.1.0.exe` dosyasını çalıştırın. Kurulum Başlat menüsüne ve masaüstüne kısayol ekler; `.ulip` proje dosyalarına çift tıklayınca uygulama açılır. Kurulum dosyası imzasız olduğu için Windows SmartScreen "Bilinmeyen yayımcı" uyarısı gösterebilir: "Ek bilgi" > "Yine de çalıştır".
 
 Kurulum dosyasını yeniden üretmek için: `npm run dist`
 
-Kurmadan çalıştırmak için `ULI Premiere.bat` dosyasına çift tıklayın (geliştirme: `npm start`).
+Kurmadan çalıştırmak için `ULI.bat` dosyasına çift tıklayın (geliştirme: `npm start`).
 
 FFmpeg uygulamanın içinde gelir, ayrıca kurmanız gerekmez.
 
@@ -102,4 +102,4 @@ Dil: menü çubuğunun sağındaki TR/EN düğmesi veya Tercihler (Ctrl+,).
 ## Veriler nerede?
 
 - Projeler: `.ulip` dosyaları (JSON) — istediğiniz yere kaydedin
-- Proxy, önbellek, otomatik kayıtlar: `%APPDATA%\ULI Premiere`
+- Proxy, önbellek, otomatik kayıtlar: `%APPDATA%\ULI`

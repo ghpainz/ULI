@@ -88,6 +88,19 @@ function atempoChain(speed) {
   return out;
 }
 
+// Zaman interpolasyonu (yavaşlatılmış kliplerde ara kareler): 'blend' kare harmanlama, 'flow' optik akış
+export function interpFilter(mode, fpsExpr) {
+  if (mode === 'blend') return `minterpolate=fps=${fpsExpr}:mi_mode=blend`;
+  if (mode === 'flow') return `minterpolate=fps=${fpsExpr}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1:scd=fdiff`;
+  return null;
+}
+// Videonun içindeki harekete bulanıklık: ardışık kareleri karıştır (deklanşör benzetimi)
+export function contentBlurFilter(level) {
+  if (level === 1) return "tmix=frames=3:weights='1 2 1'";
+  if (level === 2) return "tmix=frames=5:weights='1 2 3 2 1'";
+  return null;
+}
+
 function createReader(clip, media, seq, from, to, renderScale) {
   const fps = seq.fps;
   const native = [media.width || seq.width, media.height || seq.height];
@@ -110,21 +123,37 @@ function createReader(clip, media, seq, from, to, renderScale) {
     // hız rampası: kaynağı kendi kare hızında çöz, her zaman çizelgesi karesi için kaynak zamanına göre kare seç
     const mfps = media.fps || 30;
     const s0 = Math.max(0, sourceTimeAt(clip, from, fps));
-    args = ['-ss', s0.toFixed(6), '-i', media.path, '-an', '-sn', '-vf', `fps=${mfps},scale=${w}:${h}:flags=bicubic,vflip,format=rgba`, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
+    // yumuşak ağır çekim: kaynağı 4 kat kare hızına ara karelerle çıkar, rampadaki zamana en yakın kareyi seç
+    const up = interpFilter(clip.timeInterp, mfps * 4) ? 4 : 1;
+    const rv = [`fps=${mfps}`, `scale=${w}:${h}:flags=bicubic`];
+    if (up > 1) rv.push(interpFilter(clip.timeInterp, mfps * 4));
+    const cb = contentBlurFilter(clip.contentBlur);
+    if (cb) rv.push(cb);
+    rv.push('vflip', 'format=rgba');
+    args = ['-ss', s0.toFixed(6), '-i', media.path, '-an', '-sn', '-vf', rv.join(','), '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
     const r = new FrameReader(args, w, h);
-    r.map = (f) => Math.round((sourceTimeAt(clip, f, fps) - s0) * mfps);
+    r.map = (f) => Math.round((sourceTimeAt(clip, f, fps) - s0) * mfps * up);
     return r;
   }
   if (!clip.reverse) {
     let s0 = sourceTimeAt(clip, from, fps);
     if (s0 < 0) { lead = Math.ceil((-s0 / clip.speed) * fps - 1e-6); s0 = sourceTimeAt(clip, from + lead, fps); }
-    vf.push(`setpts=(PTS-STARTPTS)/${clip.speed}`, `fps=${fpsToFraction(fps)}`, `scale=${w}:${h}:flags=bicubic`, 'vflip', 'format=rgba');
+    vf.push(`setpts=(PTS-STARTPTS)/${clip.speed}`, `scale=${w}:${h}:flags=bicubic`);
+    // yavaşlatılmışsa ara kareler üret (aksi halde kareler tekrarlanır)
+    if (clip.speed < 0.999 && interpFilter(clip.timeInterp, 'x')) vf.push(interpFilter(clip.timeInterp, fpsToFraction(fps)));
+    vf.push(`fps=${fpsToFraction(fps)}`);
+    if (contentBlurFilter(clip.contentBlur)) vf.push(contentBlurFilter(clip.contentBlur));
+    vf.push('vflip', 'format=rgba');
     args = ['-ss', Math.max(0, s0).toFixed(6), '-i', media.path, '-an', '-sn', '-vf', vf.join(','), '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
   } else {
     const sHi = sourceTimeAt(clip, from, fps) + clip.speed / fps;
     const sLo = Math.max(0, sourceTimeAt(clip, to - 1, fps));
     const dur = Math.max(0.04, sHi - sLo);
-    vf.push(`trim=duration=${dur.toFixed(6)}`, 'reverse', `setpts=(PTS-STARTPTS)/${clip.speed}`, `fps=${fpsToFraction(fps)}`, `scale=${w}:${h}:flags=bicubic`, 'vflip', 'format=rgba');
+    vf.push(`trim=duration=${dur.toFixed(6)}`, 'reverse', `setpts=(PTS-STARTPTS)/${clip.speed}`, `scale=${w}:${h}:flags=bicubic`);
+    if (clip.speed < 0.999 && interpFilter(clip.timeInterp, 'x')) vf.push(interpFilter(clip.timeInterp, fpsToFraction(fps)));
+    vf.push(`fps=${fpsToFraction(fps)}`);
+    if (contentBlurFilter(clip.contentBlur)) vf.push(contentBlurFilter(clip.contentBlur));
+    vf.push('vflip', 'format=rgba');
     args = ['-ss', sLo.toFixed(6), '-i', media.path, '-an', '-sn', '-vf', vf.join(','), '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
   }
   const r = new FrameReader(args, w, h);

@@ -15,6 +15,7 @@ import { contextMenu, promptDialog, toast } from '../ui/dialogs.js';
 import { ensureCaptions, captionAt, sortCaptions } from '../captions.js';
 import { applyPreset, applyClipAnim } from '../presets.js';
 import { rendersFor } from '../renderCache.js';
+import { TIME_INTERP } from '../commands.js';
 import { SPEED_CURVES, applySpeedCurve } from '../speedCurves.js';
 import { uid as newId } from '../util.js';
 
@@ -422,8 +423,16 @@ export class TimelinePanel {
       ctx.fillStyle = 'rgba(45,140,235,0.35)';
       ctx.fillRect(a, h - 10, b - a, 10);
     }
-    // render çubuğu: yeşil = önizleme render'ı hazır, kırmızı = render eskidi
-    for (const r of rendersFor(seq)) {
+    // render çubuğu: sarı = render gerektiren klip (optik akış / harmanlama / video bulanıklığı), yeşil = hazır, kırmızı = eskidi
+    const rs = rendersFor(seq);
+    for (const c of Object.values(seq.clips)) {
+      if (c.type !== 'video' || !c.enabled || c.kind !== 'media') continue;
+      const needs = (c.timeInterp && (c.speed < 0.999 || remapActive(c))) || c.contentBlur;
+      if (!needs) continue;
+      ctx.fillStyle = '#e8c547';
+      ctx.fillRect(this.frameToX(c.start), h - 3, Math.max(1, c.duration * this.ppf), 3);
+    }
+    for (const r of rs) {
       const a = this.frameToX(r.f0), b = this.frameToX(r.f1);
       ctx.fillStyle = r.valid ? '#3fbf6a' : '#d9434a';
       ctx.fillRect(a, h - 3, Math.max(1, b - a), 3);
@@ -678,6 +687,7 @@ export class TimelinePanel {
       ctx.textBaseline = 'middle';
       let name = c.name;
       if (remapActive(c) || (c.type === 'audio' && remapActive(audioRemapClip(seq, c)))) name += '  [TR]';
+      if (c.type === 'video' && c.timeInterp && (c.speed < 0.999 || remapActive(c))) name += c.timeInterp === 'flow' ? '  [Smooth]' : '  [Blend]';
       else if (c.speed !== 1 || c.reverse) name += `  [${c.reverse ? '-' : ''}${Math.round(c.speed * 100)}%]`;
       if (offline) name = '⚠ ' + name;
       const tx = Math.max(x0, 0) + 4;
@@ -1586,6 +1596,7 @@ export class TimelinePanel {
         { label: t('Delete Video (Keep Audio)'), enabled: !!c.linkId, action: () => C.run('clip.keepAudio') },
         '-',
         { label: t('Speed/Duration...'), shortcut: 'Ctrl+R', action: () => C.run('clip.speed') },
+        { label: t('Time Interpolation'), enabled: c.type === 'video' && c.kind === 'media', submenu: TIME_INTERP.map(([v, l]) => ({ label: t(l), checked: (c.timeInterp || 'sample') === v, action: () => store.commit('Time Interpolation', (p) => { const s = p.sequences[p.activeSequenceId]; for (const id of new Set([c.id, ...store.ui.selection])) { const x = s.clips[id]; if (x && x.type === 'video' && x.kind === 'media') x.timeInterp = v === 'sample' ? undefined : v; } }) })) },
         { label: t('Speed Curve'), enabled: c.type === 'video' && !!c.props.timeRemap, submenu: [...SPEED_CURVES.map(([k, n]) => ({ label: t(n), action: () => applySpeedCurve([...store.ui.selection].filter((id) => store.seq.clips[id]?.type === 'video'), k) })), '-', { label: t('Normal (reset)'), action: () => applySpeedCurve([c.id], 'none') }] },
         { label: t('Nest...'), action: () => C.run('clip.nest') },
         { label: t('Make Subclip...'), shortcut: 'Ctrl+U', action: () => C.run('clip.makeSubclip') },
