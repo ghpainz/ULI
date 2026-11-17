@@ -19,7 +19,7 @@ if (!A.hasModel('fast')) {
   const offset = 45; // konuşma 1.5 sn'den başlıyor
   place(sp, offset, { v: null, a: 1, outS: sp.duration || 20 });
   const seq = S();
-  const r = await AC.runAutoCaptions(seq, { lang: 'auto', model: 'fast', lineLen: 'normal', f0: 0, f1: offset + Math.round((sp.duration || 20) * seq.fps), silent: true });
+  const r = await AC.runAutoCaptions(seq, { lang: 'auto', model: 'fast', prompt: 'Antalya, Kaleiçi', lineLen: 'normal', f0: 0, f1: offset + Math.round((sp.duration || 20) * seq.fps), silent: true });
   const caps = S().captions || [];
   const text = caps.map((c) => c.text).join(' ');
   check('Turkish detected automatically', r && r.language === 'tr', r && r.language);
@@ -41,11 +41,15 @@ if (!A.hasModel('fast')) {
   const w0 = await yellowAt(cap.words[0].start + 1, 'cap_w0.png');
   const w2 = await yellowAt(cap.words[2].start + 1, 'cap_w2.png');
   check('spoken word is highlighted and the highlight moves with speech', w0.n > 20 && w2.n > 20 && w2.x > w0.x + 10, { first: w0, third: w2 });
-  // kullanıcı metni değiştirirse vurgu güvenle kapanır (çökme yok)
-  U.store.commit('ed', (p) => { const q = p.sequences[p.activeSequenceId]; q.captions.find((c) => c.id === cap.id).text = 'tamamen farklı metin'; });
-  const w3 = await yellowAt(cap.words[0].start + 1, 'cap_w3.png');
-  check('edited caption text disables highlight safely', w3.n < 5, w3);
-  U.store.undo(); U.store.undo();
+  // kullanıcı bir kelimeyi düzeltirse vurgu çalışmaya devam eder (kelimeler yeniden hizalanır)
+  U.store.commit('ed', (p) => { const q = p.sequences[p.activeSequenceId]; const c = q.captions.find((x) => x.id === cap.id); c.text = c.text.replace(cap.words[1].text, 'Kaleiçi'); });
+  const e0 = await yellowAt(cap.words[0].start + 1, 'cap_e0.png');
+  const e2 = await yellowAt(cap.words[2].start + 1, 'cap_e2.png');
+  check('after fixing a word, highlight still follows speech', e0.n > 20 && e2.n > 20 && e2.x > e0.x + 10, { first: e0, third: e2 });
+  U.store.commit('ed2', (p) => { const q = p.sequences[p.activeSequenceId]; q.captions.find((c) => c.id === cap.id).text = 'tamamen farklı yepyeni bir metin'; });
+  const e3 = await yellowAt(cap.start + 1, 'cap_e3.png');
+  check('fully rewritten text still highlights (spread over the caption)', e3.n > 20, e3);
+  U.store.undo(); U.store.undo(); U.store.undo();
   // tek geri al
   U.store.undo();
   check('one undo removes the auto captions', !(S().captions || []).length);

@@ -26,22 +26,62 @@ export const CAPTION_PRESETS = [
   { id: 'minimal', name: 'Minimal', st: { font: 'Segoe UI', size: 50, bold: true, color: '#ffffff', outline: 0, bgEnabled: false, margin: 8, anim: 'none' } },
 ];
 
-// Altyazının kelimeleri metinde hâlâ aynı sırada mı (kullanıcı metni değiştirdiyse vurgu kapanır): her kelimenin [başla, bitir) karakter konumu
-function wordSpans(cap) {
-  if (!cap.words || !cap.words.length) return null;
-  const spans = [];
-  let pos = 0;
-  for (const w of cap.words) {
-    const i = cap.text.indexOf(w.text, pos);
-    if (i < 0) return null;
-    spans.push([i, i + w.text.length]);
-    pos = i + w.text.length;
+// Altyazı metnindeki kelimelerin [başla, bitir) karakter konumu ve zamanı. Kullanıcı metni düzelttiyse
+// yeni kelimeler eski kelimelerle hizalanır (eşleşen kelime eski zamanını alır, yeni eklenenler aradaki süreye yayılır).
+const alignCache = new WeakMap();
+const norm = (w) => w.toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}]/gu, '');
+function similar(a, b) {
+  a = norm(a); b = norm(b);
+  if (a === b) return 0;
+  if (!a || !b) return 1;
+  // kısa Levenshtein oranı
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
   }
-  return spans;
+  const r = prev[n] / Math.max(m, n);
+  return r <= 0.5 ? 0.5 : 1;
 }
-function activeWord(cap, f) {
+export function wordSpans(cap) {
+  if (!cap.words || !cap.words.length || !cap.text) return null;
+  const hit = alignCache.get(cap);
+  if (hit && hit.text === cap.text && hit.words === cap.words) return hit.res;
+  // yeni metnin kelimeleri
+  const toks = [];
+  const re = /\S+/g;
+  let mm;
+  while ((mm = re.exec(cap.text))) toks.push({ text: mm[0], a: mm.index, b: mm.index + mm[0].length });
+  const old = cap.words;
+  // kelime düzeyinde hizalama (dinamik programlama)
+  const n = old.length, m = toks.length;
+  const D = Array.from({ length: n + 1 }, () => new Float32Array(m + 1));
+  for (let i = 0; i <= n; i++) D[i][0] = i;
+  for (let j = 0; j <= m; j++) D[0][j] = j;
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + similar(old[i - 1].text, toks[j - 1].text));
+  const match = new Array(m).fill(-1);
+  for (let i = n, j = m; i > 0 && j > 0;) {
+    const sc = similar(old[i - 1].text, toks[j - 1].text);
+    if (D[i][j] === D[i - 1][j - 1] + sc && sc < 1) { match[j - 1] = i - 1; i--; j--; } else if (D[i][j] === D[i - 1][j] + 1) i--; else if (D[i][j] === D[i][j - 1] + 1) j--; else { i--; j--; }
+  }
+  // zamanlar: eşleşenler eski zaman; eşleşmeyen ardışık kelimeler komşular arasındaki süreye eşit yayılır
+  const res = toks.map((tk, j) => ({ from: tk.a, to: tk.b, start: match[j] >= 0 ? old[match[j]].start : null }));
+  for (let j = 0; j < m;) {
+    if (res[j].start != null) { j++; continue; }
+    let k = j; while (k < m && res[k].start == null) k++;
+    const s0 = j > 0 ? res[j - 1].start + 1 : cap.start;
+    const s1 = k < m ? res[k].start : Math.max(s0 + (k - j), cap.end);
+    for (let q = j; q < k; q++) res[q].start = Math.round(s0 + ((s1 - s0) * (q - j)) / (k - j));
+    j = k;
+  }
+  alignCache.set(cap, { text: cap.text, words: cap.words, res });
+  return res;
+}
+function activeWord(spans, f) {
   let k = -1;
-  for (let i = 0; i < cap.words.length; i++) if (cap.words[i].start <= f) k = i; else break;
+  for (let i = 0; i < spans.length; i++) if (spans[i].start <= f) k = i; else break;
   return k;
 }
 
@@ -88,10 +128,10 @@ export function captionClip(seq, cap, f = null) {
   let shown = cap.text || ' ', hl = null;
   const spans = st.anim && st.anim !== 'none' && f != null ? wordSpans(cap) : null;
   if (spans) {
-    const a = Math.max(0, activeWord(cap, f));
-    if (st.anim === 'single') shown = cap.words[a].text;
-    else if (st.anim === 'karaoke') hl = { from: spans[a][0], to: spans[a][1], color: st.hlColor };
-    else if (st.anim === 'box') hl = { from: spans[a][0], to: spans[a][1], box: st.hlColor };
+    const a = Math.max(0, activeWord(spans, f));
+    if (st.anim === 'single') shown = cap.text.slice(spans[a].from, spans[a].to);
+    else if (st.anim === 'karaoke') hl = { from: spans[a].from, to: spans[a].to, color: st.hlColor };
+    else if (st.anim === 'box') hl = { from: spans[a].from, to: spans[a].to, box: st.hlColor };
   }
   const text = {
     text: shown, hl,

@@ -1600,6 +1600,7 @@ export class TimelinePanel {
         { label: t('Speed Curve'), enabled: c.type === 'video' && !!c.props.timeRemap, submenu: [...SPEED_CURVES.map(([k, n]) => ({ label: t(n), action: () => applySpeedCurve([...store.ui.selection].filter((id) => store.seq.clips[id]?.type === 'video'), k) })), '-', { label: t('Normal (reset)'), action: () => applySpeedCurve([c.id], 'none') }] },
         { label: t('Nest...'), action: () => C.run('clip.nest') },
         { label: t('Make Subclip...'), shortcut: 'Ctrl+U', action: () => C.run('clip.makeSubclip') },
+        { label: t('Remove Silences...'), enabled: c.kind === 'media', action: () => C.run('clip.removeSilence') },
         { label: t('Scene Edit Detection...'), action: () => C.run('clip.sceneDetect') },
         { label: t('Split Screen...'), enabled: c.type === 'video', action: () => C.run('clip.splitScreen') },
         { label: t('Detect Beats'), enabled: c.type === 'audio', action: () => C.run('audio.detectBeats') },

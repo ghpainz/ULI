@@ -933,6 +933,7 @@ export function initCommands() {
   def('clip.keepAudio', 'Delete Video (Keep Audio)', () => keepLinkedPart('audio'), { enabled: hasSel });
   def('clip.makeSubclip', 'Make Subclip...', () => makeSubclip(), { shortcut: 'Ctrl+U' });
   def('clip.splitScreen', 'Split Screen...', async () => { const Sp = await import('./splitScreen.js'); Sp.splitScreenDialog(); }, { enabled: hasSel });
+  def('clip.removeSilence', 'Remove Silences...', async () => (await import('./silenceCut.js')).removeSilencesDialog(), { enabled: hasSel });
   def('clip.sceneDetect', 'Scene Edit Detection...', () => sceneEditDetection(), { enabled: hasSel });
   // Çok kamera
   def('sequence.autoEdit', 'Auto Edit with Template...', async () => { const A = await import('./autoEdit.js'); return A.autoEditDialog(A.selectionMediaIds()); });
@@ -1242,7 +1243,7 @@ export function menuStructure() {
       item('clip.insert'), item('clip.overwrite'), item('clip.replaceFromSource'), '-',
       { ...item('clip.enable'), checked: () => store.selectedClips().length > 0 && store.selectedClips().every((c) => c.enabled) },
       { ...item('clip.link'), label: t('Link / Unlink') }, item('clip.keepVideo'), item('clip.keepAudio'), item('clip.rename'), item('clip.makeSubclip'), item('clip.nest'), item('clip.removeEffects'), '-',
-      item('clip.sceneDetect'), item('clip.splitScreen'), '-',
+      item('clip.removeSilence'), item('clip.sceneDetect'), item('clip.splitScreen'), '-',
       { label: t('Multi-Camera'), submenu: () => [
         { ...item('multicam.enable'), checked: () => store.selectedClips().some((c) => isMulticamClip(c)) },
         { ...item('multicam.view'), checked: () => !!store.ui.multicamView },
