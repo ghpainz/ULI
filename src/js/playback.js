@@ -18,6 +18,8 @@ export class PlaybackEngine extends Emitter {
   constructor(compositor) {
     super();
     this.comp = compositor;
+    // yapay zekâ modeli (arka plan silme) yüklenince yeniden çiz
+    window.addEventListener('uli-vision-ready', () => this.requestRender());
     this.handles = new Map();
     this.frame = 0;
     this.playing = false;

@@ -1,12 +1,12 @@
 {
   "name": "uli",
   "productName": "ULI",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "ULI — Premiere Pro sadeliğinde, CapCut zenginliğinde video kurgu uygulaması",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "predist": "node tools/fetch-whisper.js",
+    "predist": "node tools/fetch-whisper.js && node tools/fetch-mediapipe-models.js",
     "dist": "electron-builder --win nsis --x64",
     "fetch-whisper": "node tools/fetch-whisper.js",
     "test": "node tests/run.js"
@@ -14,6 +14,7 @@
   "license": "MIT",
   "private": true,
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.0",
     "ffmpeg-static": "^5.3.0",
     "ffprobe-static": "^3.1.0"
   },
@@ -32,7 +33,10 @@
       "package.json",
       "!node_modules/ffprobe-static/bin/darwin/**",
       "!node_modules/ffprobe-static/bin/linux/**",
-      "!node_modules/ffprobe-static/bin/win32/ia32/**"
+      "!node_modules/ffprobe-static/bin/win32/ia32/**",
+      "!node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_module_internal.*",
+      "!node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_nosimd_internal.*",
+      "!node_modules/@mediapipe/tasks-vision/*.map"
     ],
     "extraFiles": [
       {
@@ -52,6 +56,10 @@
       {
         "from": "vendor/whisper",
         "to": "whisper"
+      },
+      {
+        "from": "vendor/mediapipe-models",
+        "to": "mediapipe-models"
       }
     ],
     "asarUnpack": [

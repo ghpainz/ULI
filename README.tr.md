@@ -82,6 +82,12 @@ ULI'nin kaynak kodu [MIT lisansı](LICENSE) ile dağıtılır. Kurulum dosyası 
 - Altyazılar konuşmaya göre zamanlanır ve okunaklı satırlara bölünür; kelime kelime stiller (söylenen kelime sarı, kelime kutusu, tek tek kelimeler)
 - Konuşma modeli ilk kullanımda bir kez indirilir (Hızlı 190 MB / En İyi 574 MB)
 
+**Yapay zekâ araçları (internetsiz)**
+- Arka Plan Silme efekti: şeffaf (alttaki ize istediğiniz videoyu/fotoğrafı koyun), bulanık veya düz renk arka plan
+- Otomatik Dikey Çevir (Sekans menüsü): sekansın 9:16 / 1:1 / 4:5 kopyasını oluşturur, kadraj kişinin yüzünü takip eder
+- Sessizlikleri Kaldır (Klip menüsü / sağ tık): konuşma kliplerindeki duraklamaları bulup keser (jump cut), diğer izlerdeki müziğe dokunmaz
+- Otomatik altyazıda Özel Kelimeler (isimlerin doğru yazılması için); bir kelimeyi düzeltince kelime vurgusu çalışmaya devam eder
+
 **Ses**
 - Klip ses seviyesi ve pan keyframe'leri, iz mikseri (fader, pan, M/S), ana çıkış, ses ölçerleri
 - Temel Ses paneli: klibi Diyalog/Müzik/Efekt/Ortam olarak işaretle; ses yüksekliğini hedef LUFS'a otomatik eşle, gürültü/uğultu/sızıltı onarımı, konuşmayı güçlendirme, müziği diyaloğun altında otomatik kısma (ducking)

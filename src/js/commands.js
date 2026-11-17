@@ -995,6 +995,7 @@ export function initCommands() {
   // Sekans
   def('sequence.render', 'Render In to Out', async () => { const R = await import('./renderCache.js'); await R.renderInOut(seq()); app.timeline?._draw(); engine().requestRender(); }, { shortcut: 'Enter', enabled: hasSeq });
   def('sequence.deleteRenders', 'Delete Render Files', async () => { const R = await import('./renderCache.js'); R.deleteRenders(seq()); app.timeline?._draw(); engine().requestRender(); toast(t('Render files deleted')); }, { enabled: hasSeq });
+  def('sequence.autoReframe', 'Auto Reframe...', async () => (await import('./reframe.js')).autoReframeDialog(), { enabled: hasSeq });
   def('sequence.canvas', 'Canvas / Aspect Ratio...', async () => { const Cv = await import('./canvas.js'); Cv.canvasDialog(); }, { enabled: hasSeq });
   def('sequence.settings', 'Sequence Settings...', async () => {
     const s = seq();
@@ -1254,7 +1255,7 @@ export function menuStructure() {
       { label: t('Proxy'), submenu: () => [item('clip.createProxy'), { ...item('clip.toggleProxies'), checked: () => store.ui.useProxies }] },
     ] },
     { label: t('Sequence'), items: () => [
-      item('sequence.settings'), item('sequence.canvas'), '-',
+      item('sequence.settings'), item('sequence.canvas'), item('sequence.autoReframe'), '-',
       item('sequence.render'), item('sequence.deleteRenders'), '-',
       item('sequence.addEdit'), item('sequence.addEditAll'), '-',
       item('sequence.videoTransition'), item('sequence.audioTransition'), '-',

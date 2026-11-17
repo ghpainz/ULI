@@ -35,6 +35,14 @@ keeps its own license; ULI runs FFmpeg and FFprobe as separate programs
 - Original models: OpenAI Whisper, **MIT License** — Copyright (c) 2022 OpenAI
 - Downloaded to `%APPDATA%\ULI\models` only when the user starts Auto Captions; verified with SHA-256.
 
+## MediaPipe Tasks Vision (Background Removal, Auto Reframe)
+
+- `@mediapipe/tasks-vision` 1.2.0 (JavaScript + WebAssembly), https://github.com/google-ai-edge/mediapipe
+- License: **Apache License 2.0** — Copyright The MediaPipe Authors
+- Models (installed under `resources/mediapipe-models`, from https://storage.googleapis.com/mediapipe-models):
+  `selfie_segmenter.tflite` (person segmentation) and `blaze_face_full_range.tflite` (face detection), Apache License 2.0
+- Runs entirely on the computer; images are never uploaded.
+
 ## Electron
 
 - Version: 38, https://www.electronjs.org/

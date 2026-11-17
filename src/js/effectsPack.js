@@ -525,6 +525,41 @@ void main(){
   o = vec4(mix(c, clamp(r, 0.0, 1.0), u_cmMix / 100.0) * s.a, s.a);
 }`,
   },
+  // ---------------- Yapay zekâ ----------------
+  bgRemove: {
+    name: 'Background Removal', group: 'AI', category: 'video', segment: true,
+    params: [
+      S('bgMode', 'Background', ['Transparent (shows track below)', 'Blur', 'Color'], 0),
+      C('bgColor', 'Color', '#1f6f43'),
+      N('bgBlur', 'Blur Amount', 2, 150, 45),
+      N('bgEdge', 'Edge Softness', 0, 100, 30),
+      N('bgShift', 'Shrink / Grow Edge', -50, 50, 0),
+      B('bgInvert', 'Remove the Person Instead', false),
+    ],
+    shader: `uniform sampler2D u_segMask; uniform float u_hasSeg;
+uniform float u_bgMode, u_bgBlur, u_bgEdge, u_bgShift, u_bgInvert; uniform vec3 u_bgColor;
+void main(){
+  vec4 c = texture(u_tex, v_uv);
+  if (u_hasSeg < 0.5) { o = c; return; }
+  float m = texture(u_segMask, vec2(v_uv.x, 1.0 - v_uv.y)).r;
+  float th = 0.5 - u_bgShift / 100.0, w = max(0.01, u_bgEdge / 200.0);
+  float a = smoothstep(th - w, th + w, m);
+  if (u_bgInvert > 0.5) a = 1.0 - a;
+  vec4 bg = vec4(0.0);
+  if (u_bgMode > 1.5) bg = vec4(u_bgColor, 1.0);
+  else if (u_bgMode > 0.5) {
+    vec4 acc = vec4(0.0);
+    float r = u_bgBlur * u_srcScale;
+    for (int i = 0; i < 40; i++) {
+      float fi = float(i);
+      float rr = sqrt((fi + 0.5) / 40.0) * r, an = fi * 2.39996;
+      acc += texture(u_tex, clamp(v_uv + vec2(cos(an), sin(an)) * rr / u_size, 0.0, 1.0));
+    }
+    bg = acc / 40.0;
+  }
+  o = c * a + bg * (1.0 - a);
+}`,
+  },
   letterbox: {
     name: 'Cinematic Bars', group: 'Transform', category: 'video',
     params: [S('lbAspect', 'Aspect Ratio', ['2.39:1', '2.35:1', '2:1', '1.85:1', '4:3', '1:1', '4:5', '9:16']), C('lbColor', 'Color', '#000000'), N('lbOpacity', 'Opacity', 0, 100, 100)],

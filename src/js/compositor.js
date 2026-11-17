@@ -10,6 +10,7 @@ import { buildCurveLUT, curvesActive } from './curves.js';
 import { solve as solveStab } from './stabilize.js';
 import { renderGraphic, graphicAnimating } from './graphics.js';
 import { clipAnimState, hasClipAnim } from './clipAnim.js';
+import { segmenterReady, ensureSegmenter, personMask } from './vision.js';
 
 // Konum/ölçek/döndürme/bağlantı noktası animasyonlu mu (hareket bulanıklığı yalnız o zaman)
 function transformAnimated(clip) {
@@ -553,6 +554,8 @@ export class Compositor {
       }
       let prog;
       try { prog = this._compile('fx:' + fx.type, FX_HEADER + def.shader); } catch (e) { this.onError(e); continue; }
+      // yapay zekâ kişi maskesi (arka plan silme): efekt girdisinden hesaplanır
+      const segTex = def.segment ? this._segMask(fx, curTex, w, h, local, maskKey) : null;
       const masks = (fx.masks || []).filter((mk) => mk.enabled !== false);
       const fxInTex = curTex;
       const keep = masks.length ? curTemp : null; // maske karışımı için efekt girdisini sakla
@@ -572,6 +575,11 @@ export class Compositor {
         this._u1f('u_local', (local || 0) / (this._fps || 30));
         if (dir) this._u2f('u_dir', dir[0], dir[1]);
         this._setEffectUniforms(fx, def, local);
+        if (def.segment) {
+          gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, segTex || this.solidTex); this._u1i('u_segMask', 3);
+          this._u1f('u_hasSeg', segTex ? 1 : 0);
+          gl.activeTexture(gl.TEXTURE0);
+        }
         this._draw();
         if (curTemp !== keep) this._releaseTemp(curTemp);
         curTemp = out;
@@ -598,6 +606,55 @@ export class Compositor {
       }
     }
     return { tex: curTex, temp: curTemp };
+  }
+
+  // Kişi maskesi: girdiyi küçültüp (en fazla 384 px) okur, MediaPipe ile kişiyi bulur, R8 dokuya yükler.
+  // Aynı kare tekrar çizilirse önbellekten; ardışık karelerde titremeyi azaltmak için önceki maskeyle harmanlanır.
+  _segMask(fx, tex, w, h, local, key) {
+    const gl = this.gl;
+    const q = 0;
+    if (!segmenterReady(q)) {
+      ensureSegmenter(q).then(() => window.dispatchEvent(new Event('uli-vision-ready'))).catch((e) => this.onError(e));
+      return null;
+    }
+    if (!this._seg) this._seg = new Map();
+    const k = key + ':' + fx.id;
+    let S = this._seg.get(k);
+    if (S && S.local === local && S.w === w && S.h === h && S.q === q) return S.tex;
+    const sc = Math.min(1, 384 / Math.max(w, h));
+    const sw = Math.max(8, Math.round(w * sc)), sh = Math.max(8, Math.round(h * sc));
+    const tmp = this._getTemp(sw, sh);
+    this._bindTarget(tmp);
+    gl.disable(gl.BLEND);
+    this._use(this._compile('copy', FS_COPY));
+    this._mat(FULL);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); this._u1i('u_tex', 0); this._u1f('u_opacity', 1);
+    this._draw();
+    const px = new Uint8Array(sw * sh * 4);
+    gl.readPixels(0, 0, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    this._releaseTemp(tmp);
+    const img = new ImageData(sw, sh);
+    for (let y = 0; y < sh; y++) img.data.set(px.subarray((sh - 1 - y) * sw * 4, (sh - y) * sw * 4), y * sw * 4);
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+    let prob;
+    try { prob = personMask(q, img); } catch (e) { this.onError(e); return S ? S.tex : null; }
+    if (!prob || prob.length !== sw * sh) return S ? S.tex : null;
+    if (S && S.data && S.sw === sw && S.sh === sh && S.local !== local && Math.abs(local - S.local) <= 2) {
+      for (let i = 0; i < prob.length; i++) prob[i] = prob[i] * 0.65 + S.data[i] * 0.35;
+    }
+    const u8 = new Uint8Array(sw * sh);
+    for (let i = 0; i < u8.length; i++) u8[i] = Math.max(0, Math.min(255, Math.round(prob[i] * 255)));
+    const mt = S?.tex || this._makeTex();
+    gl.bindTexture(gl.TEXTURE_2D, mt);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, sw, sh, 0, gl.RED, gl.UNSIGNED_BYTE, u8);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    S = { local, w, h, q, sw, sh, data: prob, tex: mt };
+    this._seg.set(k, S);
+    if (this._seg.size > 64) { const first = this._seg.keys().next().value; const old = this._seg.get(first); if (old?.tex && old.tex !== mt) gl.deleteTexture(old.tex); this._seg.delete(first); }
+    return mt;
   }
 
   // Eko / iz: klibin efekt zincirindeki önceki karelerini saklar ve bu kareyle birleştirir.

@@ -61,6 +61,8 @@ const MIME = {
   '.ogg': 'audio/ogg',
   '.opus': 'audio/ogg',
   '.flac': 'audio/flac',
+  '.wasm': 'application/wasm',
+  '.mjs': 'text/javascript',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
 };
@@ -115,6 +117,17 @@ function registerProtocol() {
     const url = new URL(request.url);
     if (url.host === 'media') {
       const p = decodeURIComponent(url.pathname.slice(1));
+      return fileResponse(p, request);
+    }
+    // yapay zekâ kütüphanesi (MediaPipe) ve modelleri: uli://vendor/mp/... ve uli://vendor/models/...
+    if (url.host === 'vendor') {
+      const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+      const [kind, ...rest] = rel.split('/');
+      const base = kind === 'mp' ? path.join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision')
+        : kind === 'models' ? (app.isPackaged ? path.join(process.resourcesPath, 'mediapipe-models') : path.join(__dirname, 'vendor', 'mediapipe-models')) : null;
+      if (!base) return new Response('Not found', { status: 404 });
+      const p = path.normalize(path.join(base, ...rest));
+      if (!p.startsWith(base)) return new Response('Forbidden', { status: 403 });
       return fileResponse(p, request);
     }
     if (url.host === 'app') {

@@ -12,6 +12,7 @@ import { evalParam } from './keyframes.js';
 import { rt, loadImage } from './media.js';
 import { childProcess, nodeFs, nodePath, nodeOs, fpsToFraction, dbToGain, uid, ensureDir, sleep } from './util.js';
 import { t } from './i18n.js';
+import { ensureSegmenter } from './vision.js';
 
 function even(n) { return Math.max(2, Math.round(n / 2) * 2); }
 
@@ -425,6 +426,13 @@ export async function exportSequence(seqIn, o, { onProgress, onStatus, signal })
   signal.addEventListener('abort', abort);
   const t0 = performance.now();
   try {
+    // 0a) arka plan silme kullanılıyorsa yapay zekâ modeli dışa aktarmadan önce hazır olsun (her kare aynı sonucu versin)
+    {
+      const pr = o.project || store.project;
+      const qs = new Set();
+      for (const s of Object.values(pr.sequences || {})) for (const c of Object.values(s.clips || {})) for (const fx of c.effects || []) if (fx.type === 'bgRemove') qs.add(0);
+      for (const q of qs) await ensureSegmenter(q);
+    }
     // 0) otomatik gürültü tabanı gereken klipler (en dış sekans)
     if (!o.project) {
       for (const id in seqIn.clips) if (needsNoiseFloor(seqIn.clips[id])) await ensureNoiseFloor(id);

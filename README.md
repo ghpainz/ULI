@@ -43,6 +43,11 @@ desktop shortcuts and opens `.ulip` project files on double-click. FFmpeg is inc
 - Captions are timed to the speech and split into readable lines; word-by-word styles (highlighted word, word box, one word at a time)
 - The speech model is downloaded once on first use (190 MB fast / 574 MB best)
 
+**AI tools (offline)**
+- Background Removal effect: transparent (put any video/photo below), blurred or solid-color background
+- Auto Reframe: makes a 9:16 / 1:1 / 4:5 copy of a sequence where the frame follows the person's face
+- Remove Silences: finds pauses in talking clips and cuts them out (jump cut), without touching music on other tracks
+
 **Audio**
 - Track mixer, Essential Sound (loudness matching, repair, ducking), audio effects, voice changer
 - Built-in sound effect library, text-to-speech (Windows voices), voice-over recording
@@ -71,7 +76,6 @@ settings or recent projects. Test videos are generated with FFmpeg into `tests/.
 
 ## Roadmap
 
-- AI tools: background removal, auto reframe
 - Code-signed installer and automatic updates
 - macOS and Linux builds
 - Plugin / extension support
