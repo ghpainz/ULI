@@ -219,8 +219,24 @@ ipcMain.handle('app:paths', () => {
   };
 });
 
-ipcMain.handle('dialog:open', (e, opts) => dialog.showOpenDialog(mainWindow, opts));
-ipcMain.handle('dialog:save', (e, opts) => dialog.showSaveDialog(mainWindow, opts));
+// Electron 43+ defaultPath verilmeyen diyalogları "İndirilenler"de açar; son kullanılan klasörü biz hatırlarız
+let lastDialogDir = null;
+function withLastDir(opts) {
+  return opts && !opts.defaultPath && lastDialogDir ? { ...opts, defaultPath: lastDialogDir } : opts;
+}
+function rememberDir(p, isDir) {
+  if (p) lastDialogDir = isDir ? p : path.dirname(p);
+}
+ipcMain.handle('dialog:open', async (e, opts) => {
+  const r = await dialog.showOpenDialog(mainWindow, withLastDir(opts));
+  if (!r.canceled && r.filePaths.length) rememberDir(r.filePaths[0], (opts?.properties || []).includes('openDirectory'));
+  return r;
+});
+ipcMain.handle('dialog:save', async (e, opts) => {
+  const r = await dialog.showSaveDialog(mainWindow, withLastDir(opts));
+  if (!r.canceled && r.filePath) rememberDir(r.filePath, false);
+  return r;
+});
 ipcMain.handle('dialog:message', (e, opts) => dialog.showMessageBox(mainWindow, opts));
 ipcMain.handle('shell:reveal', (e, p) => shell.showItemInFolder(p));
 ipcMain.handle('shell:open', (e, p) => shell.openPath(p));
