@@ -56,3 +56,13 @@ check('2 s export with background removal', pr.video && Math.abs(pr.duration - 2
 await V.ensureFaceDetector();
 const faces = V.detectFaces(c);
 check('face detector finds the face', faces.length >= 1 && Math.abs(faces[0].x + faces[0].w / 2 - 320) < 40, faces);
+// Efektler panelinde görünüyor mu (Türkçe aramayla) ve hiçbir video efekti panelden kaybolmuş olmasın
+U.app.commands.showPanel('effects'); await sleep(200);
+const ep = U.app.effectsPanel;
+ep.view = 'list'; ep.filter = 'arka'; ep.render(); await sleep(200);
+check('Effects panel search "arka" finds Background Removal', /Arka Plan Silme|Background Removal/.test(ep.tree.innerText), ep.tree.innerText.slice(0, 120));
+ep.filter = ''; ep.render(); await sleep(100);
+const D = await import('./js/effectsDef.js');
+const groups = D.effectGroups();
+const orphans = Object.entries(D.EFFECTS).filter(([, d]) => d.category !== 'audio' && !groups.includes(d.group)).map(([k]) => k);
+check('every video effect belongs to a group shown in the panel', orphans.length === 0, orphans);

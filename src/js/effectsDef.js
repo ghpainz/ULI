@@ -775,7 +775,12 @@ export function audioFxFilters(effects, stage) {
 }
 
 // Efekt panelindeki klasör sırası
-export const EFFECT_GROUPS = ['Color Correction', 'Image Control', 'Blur & Sharpen', 'Motion', 'Retro', 'Light', 'Keying', 'Transform', 'Perspective', 'Distort', 'Stylize', 'Channel'];
+export const EFFECT_GROUPS = ['AI', 'Color Correction', 'Image Control', 'Blur & Sharpen', 'Motion', 'Retro', 'Light', 'Keying', 'Transform', 'Perspective', 'Distort', 'Stylize', 'Channel'];
+// listede olmayan bir gruba eklenen efekt panelde kaybolmasın: bilinmeyen gruplar sona eklenir
+export function effectGroups() {
+  const extra = [...new Set(Object.values(EFFECTS).filter((d) => d.category !== 'audio' && d.group && !EFFECT_GROUPS.includes(d.group)).map((d) => d.group))];
+  return [...EFFECT_GROUPS, ...extra];
+}
 
 export const TRANSITION_HEADER = `#version 300 es
 precision highp float;

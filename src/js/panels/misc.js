@@ -3,7 +3,7 @@ import { store } from '../store.js';
 import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, clamp, framesToTC, rafThrottle, ipc, nodePath, dbToGain, gainToDb } from '../util.js';
-import { EFFECTS, EFFECT_GROUPS, TRANSITIONS, AUDIO_EFFECTS, AUDIO_EFFECT_GROUPS } from '../effectsDef.js';
+import { EFFECTS, EFFECT_GROUPS, effectGroups, TRANSITIONS, AUDIO_EFFECTS, AUDIO_EFFECT_GROUPS } from '../effectsDef.js';
 import { evalParam, setParamAt } from '../keyframes.js';
 import { createEffect } from '../model.js';
 import { settings, saveSettings } from '../settings.js';
@@ -150,7 +150,7 @@ export class EffectsPanel {
     if (an.length) this.tree.appendChild(this._folder('anims', t('Clip Animations'), an, '🎬'));
     // video efektleri
     const vfx = [];
-    for (const g of EFFECT_GROUPS) {
+    for (const g of effectGroups()) {
       const items = Object.entries(EFFECTS).filter(([, d]) => d.group === g && match(d.name)).map(([k, d]) => this._item('effect', k, d.name, 'vfx'));
       if (items.length) vfx.push(this._folder('vfx:' + g, t(g), items));
     }
