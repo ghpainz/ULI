@@ -78,6 +78,7 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "guid": "7b5e5154-359f-572c-b486-92908d8a0753",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
