@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const BASE = 'https://storage.googleapis.com/mediapipe-models/';
 const MODELS = [
   ['image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite', '191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b'],
+  ['pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task', '5134a3aad27a58b93da0088d431f366da362b44e3ccfbe3462b3827a839011b1'],
   ['face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite', '3698b18f063835bc609069ef052228fbe86d9c9a6dc8dcb7c7c2d69aed2b181b'],
 ];
 const OUT = path.join(__dirname, '..', 'vendor', 'mediapipe-models');

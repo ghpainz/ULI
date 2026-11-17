@@ -40,7 +40,8 @@ keeps its own license; ULI runs FFmpeg and FFprobe as separate programs
 - `@mediapipe/tasks-vision` 1.2.0 (JavaScript + WebAssembly), https://github.com/google-ai-edge/mediapipe
 - License: **Apache License 2.0** — Copyright The MediaPipe Authors
 - Models (installed under `resources/mediapipe-models`, from https://storage.googleapis.com/mediapipe-models):
-  `selfie_segmenter.tflite` (person segmentation) and `blaze_face_full_range.tflite` (face detection), Apache License 2.0
+  `selfie_segmenter.tflite` (close-up person segmentation), `pose_landmarker_full.task` (full-body / distant person
+  segmentation) and `blaze_face_full_range.tflite` (face detection), Apache License 2.0
 - Runs entirely on the computer; images are never uploaded.
 
 ## Electron

@@ -24,11 +24,17 @@ async function create(Cls, modelFile, extra) {
 
 const seg = {}; // kalite -> { p: Promise, s: ImageSegmenter }
 export function segmenterReady(q = 0) { return !!seg[q]?.s; }
+// Yakın çekim modeli (selfie) + tam boy / uzak çekim için poz modeli (kişi maskesi verir)
+let pose = null;
 export function ensureSegmenter(q = 0) {
   if (!seg[q]) {
     const Q = QUALITY[q] || QUALITY[0];
     seg[q] = { s: null, p: null };
-    seg[q].p = lib().then(({ mp }) => create(mp.ImageSegmenter, Q.file, { outputConfidenceMasks: true, outputCategoryMask: false }))
+    seg[q].p = lib().then(async ({ mp }) => {
+      const s = await create(mp.ImageSegmenter, Q.file, { outputConfidenceMasks: true, outputCategoryMask: false });
+      try { pose = await create(mp.PoseLandmarker, 'pose_landmarker_full.task', { outputSegmentationMasks: true, numPoses: 3 }); } catch (e) { console.warn('pose model', e); }
+      return s;
+    })
       .then((s) => { seg[q].s = s; return s; })
       .catch((e) => { delete seg[q]; throw e; });
   }
@@ -54,6 +60,19 @@ export function personMask(q, imageData) {
     }
     for (const m of masks) m.close?.();
   });
+  // yakın çekim modeli kişiyi pek bulamadıysa (uzak / tam boy çekim) poz modelinin maskesini ekle
+  if (out && pose) {
+    let cov = 0;
+    for (let i = 0; i < out.length; i++) if (out[i] > 0.5) cov++;
+    if (cov < out.length * 0.08) {
+      const r = pose.detect(imageData);
+      for (const mk of r.segmentationMasks || []) {
+        const a = mk.getAsFloat32Array();
+        if (a.length === out.length) for (let i = 0; i < a.length; i++) if (a[i] > out[i]) out[i] = a[i];
+        mk.close?.();
+      }
+    }
+  }
   return out;
 }
 
