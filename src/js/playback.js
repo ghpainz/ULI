@@ -183,7 +183,12 @@ export class PlaybackEngine extends Emitter {
         this.emit('frame', Math.floor(f));
       }
     }
+    // oynatırken ekran yenilemesi (ör. 144 Hz) sekans karesinden hızlıysa: kare değişmediyse ve yeni video karesi yoksa çizme
+    const fi = Math.floor(this.previewFrame ?? this.frame);
+    if (this.playing && !this._renderQueued && fi === this._lastFi && !this._vfDirty) { this._kick(); return; }
     this._renderQueued = false;
+    this._vfDirty = false;
+    this._lastFi = fi;
     try {
       this._renderNow();
     } catch (e) {
@@ -322,7 +327,7 @@ export class PlaybackEngine extends Emitter {
     const h = this.handles.get(it.clip.id + ':video');
     if (!h || h.el.readyState < 2 || !h.el.videoWidth) return h && h.lastOk ? h.lastOk : null;
     // Oynatırken her karede yükle; duraklatılmışken yalnızca yeni kare geldiğinde (seeked)
-    if (this.playing && !h.el.paused) h.ver = (h.ver || 0) + 1;
+    if (this.playing && !h.el.paused && !h.rvfc) h.ver = (h.ver || 0) + 1;
     const src = {
       type: 'element', el: h.el, w: h.el.videoWidth, h: h.el.videoHeight,
       nativeW: m.width || h.el.videoWidth, nativeH: m.height || h.el.videoHeight,
@@ -364,6 +369,17 @@ export class PlaybackEngine extends Emitter {
       } else this.requestRender();
     });
     el.addEventListener('loadeddata', () => { h.ver++; this.requestRender(); });
+    // oynatırken yalnız gerçekten yeni bir video karesi geldiğinde dokuyu güncelle ve yeniden çiz
+    if (kind === 'video' && el.requestVideoFrameCallback) {
+      h.rvfc = true;
+      const onFrame = () => {
+        if (this.handles.get(key) !== h) return;
+        h.ver++;
+        this._vfDirty = true;
+        el.requestVideoFrameCallback(onFrame);
+      };
+      el.requestVideoFrameCallback(onFrame);
+    }
     el.addEventListener('error', () => { h.error = true; });
     if (kind === 'audio') {
       try {

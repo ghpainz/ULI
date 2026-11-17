@@ -1,0 +1,22 @@
+// Oynatma: hızlı kesmelerde görüntü kaybolmamalı, ekran yenilemesi ne olursa olsun gereksiz yeniden çizim yapılmamalı
+await U.IO.newProject();
+const [cam, scn] = await U.importFiles([MEDIA + 'camA.mp4', MEDIA + 'scenes.mp4']);
+await sleep(1000);
+U.app.commands.newSequenceFromMedia(cam);
+for (let i = 0; i < 8; i++) place(i % 2 ? scn : cam, i * 15, { inS: i * 0.6, outS: i * 0.6 + 0.5 });
+await sleep(300);
+const eng = U.app.engine;
+let renders = 0, missing = 0;
+const on = (e) => { renders++; if (e.missing) missing++; };
+eng.on('rendered', on);
+eng.setFrame(0); await sleep(800);
+renders = 0; missing = 0;
+eng.play(1); await sleep(3000); eng.pause();
+eng.off?.('rendered', on);
+const perSec = renders / 3;
+check('playback redraws at most ~2× the frame rate (not every screen refresh)', perSec <= S().fps * 2.2, +perSec.toFixed(1));
+check('playback keeps up (at least ~frame rate)', perSec >= S().fps * 0.8, +perSec.toFixed(1));
+check('fast cuts: almost no frames without video', missing <= 2, missing);
+const v = [...eng.handles.values()].filter((h) => h.kind === 'video').map((h) => h.el.getVideoPlaybackQuality());
+const dropped = v.reduce((a, q) => a + q.droppedVideoFrames, 0), total = v.reduce((a, q) => a + q.totalVideoFrames, 0);
+check('video decoder drops < 5% of frames', total > 0 && dropped / total < 0.05, { dropped, total });
