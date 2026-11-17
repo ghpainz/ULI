@@ -4,9 +4,14 @@ const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
 
+// Test modu (yalnız geliştirme sürümü): testler kullanıcının gerçek ayarlarına dokunmasın diye ayrı, geçici bir veri klasörü kullanır
+const TEST_MODE = !app.isPackaged && !!process.env.ULI_TEST;
+if (TEST_MODE) app.setPath('userData', process.env.ULI_TEST_USERDATA || path.join(require('os').tmpdir(), 'uli-test-userdata'));
+
 // Eski adla ("ULI Premiere") kaydedilmiş ayarları, proxy'leri ve otomatik kayıtları yeni ada taşı.
 // Uygulama adı değişince Windows'taki veri klasörü de değişir; bu yüzden ilk açılışta bir kez yapılır.
 (function migrateUserData() {
+  if (TEST_MODE) return;
   try {
     const newDir = app.getPath('userData');
     const oldDir = path.join(app.getPath('appData'), 'ULI Premiere');
@@ -188,6 +193,7 @@ ipcMain.handle('app:paths', () => {
     ffmpeg,
     ffprobe,
     userData,
+    testMode: TEST_MODE,
     documents: app.getPath('documents'),
     videos: app.getPath('videos'),
     temp: app.getPath('temp'),
@@ -205,14 +211,21 @@ ipcMain.handle('win:title', (e, title) => { if (mainWindow) mainWindow.setTitle(
 ipcMain.handle('win:devtools', () => { if (mainWindow) mainWindow.webContents.toggleDevTools(); });
 ipcMain.handle('win:fullscreen', () => { if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen()); });
 ipcMain.handle('win:reload', () => { if (mainWindow) mainWindow.webContents.reloadIgnoringCache(); });
-// Otomatik test desteği (ULI_TEST=<renderer betiği yolu>)
-ipcMain.handle('test:shot', async (e, file) => {
-  const img = await mainWindow.webContents.capturePage();
-  fs.writeFileSync(file, img.toPNG());
-  return file;
-});
+// Otomatik test desteği (ULI_TEST=<renderer betiği yolu>). Yalnız geliştirme sürümünde (npm start / testler)
+// çalışır; kurulu uygulamada bu kancalar hiç oluşturulmaz.
+if (TEST_MODE) {
+  ipcMain.handle('test:shot', async (e, file) => {
+    const img = await mainWindow.webContents.capturePage();
+    fs.writeFileSync(file, img.toPNG());
+    return file;
+  });
+  // gerçek fare/klavye girdisi (çift tıklama, sürükleme testleri)
+  ipcMain.handle('test:input', async (e, evs) => {
+    for (const ev of evs) { mainWindow.webContents.sendInputEvent(ev); await new Promise((r) => setTimeout(r, 25)); }
+  });
+}
 function runTestScript() {
-  const file = process.env.ULI_TEST;
+  const file = TEST_MODE ? process.env.ULI_TEST : null;
   if (!file) return;
   mainWindow.webContents.once('did-finish-load', () => {
     setTimeout(async () => {
@@ -234,7 +247,7 @@ ipcMain.handle('app:confirm-close', () => {
 });
 
 // Tek örnek: ikinci kez açılırsa (ör. .ulip dosyasına çift tık) mevcut pencereye ilet
-const gotLock = process.env.ULI_TEST ? true : app.requestSingleInstanceLock();
+const gotLock = TEST_MODE ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {

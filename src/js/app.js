@@ -318,7 +318,8 @@ async function boot() {
   IO.updateTitle();
   engine.requestRender();
   // hata ayıklama / otomatik test erişimi
-  window.__uli = { store, app, run, E, IO, importFiles, settings, ...(await import('./media.js')), ...(await import('./exporter.js')), ...(await import('./model.js')) };
+  // test betikleri için iç erişim (yalnız test modunda)
+  if (paths.testMode) window.__uli = { store, app, run, E, IO, importFiles, settings, ...(await import('./media.js')), ...(await import('./exporter.js')), ...(await import('./model.js')) };
   // komut satırından proje
   const argProj = (paths.argv || []).find((a) => a.toLowerCase().endsWith('.' + IO.PROJECT_EXT));
   if (argProj) await IO.openProject(argProj);
