@@ -931,7 +931,7 @@ export function initCommands() {
   def('clip.splitScreen', 'Split Screen...', async () => { const Sp = await import('./splitScreen.js'); Sp.splitScreenDialog(); }, { enabled: hasSel });
   def('clip.sceneDetect', 'Scene Edit Detection...', () => sceneEditDetection(), { enabled: hasSel });
   // Çok kamera
-  def('sequence.autoEdit', 'Auto Edit with Template...', async () => (await import('./autoEdit.js')).autoEditDialog(app.project?.selectedMediaIds() || []));
+  def('sequence.autoEdit', 'Auto Edit with Template...', async () => { const A = await import('./autoEdit.js'); return A.autoEditDialog(A.selectionMediaIds()); });
   def('multicam.create', 'Create Multi-Camera Source Sequence...', () => createMulticamDialog(app.project?.selectedMediaIds() || []));
   def('multicam.enable', 'Enable Multi-Camera', () => toggleMulticam(), { enabled: () => store.selectedClips().some((c) => c.kind === 'sequence') });
   def('multicam.view', 'Multi-Camera View', () => { store.ui.multicamView = !store.ui.multicamView; app.program?.updateButtons(); engine()?.requestRender(); }, { shortcut: 'Shift+0' });

@@ -64,3 +64,10 @@ const nums = [...em.querySelectorAll('input')].filter((x) => x.type === 'number'
 check('export preset TikTok sets 1080×1920 MP4', nums.includes('1080') && nums.includes('1920'), nums.slice(0, 6));
 [...em.querySelectorAll('.modal-buttons button')].find((b) => !b.classList.contains('primary') && /İptal|Cancel/.test(b.textContent)).click();
 await ep;
+// zaman çizelgesinde seçili kliplerden (sağ tık menüsü yolu)
+const Aa = await import('./js/autoEdit.js');
+U.app.commands.newSequenceFromMedia(camA);
+const t1 = place(camA, 0, { a: 0, outS: 3 }), t2 = place(scn, 90, { a: 0, outS: 3 });
+U.store.select([t1[0], t2[0]]); U.store.ui.focusedPanel = 'timeline';
+const tsel = Aa.selectionMediaIds();
+check('timeline selection feeds the template dialog', tsel.length === 2 && tsel.includes(camA.id) && tsel.includes(scn.id), tsel);

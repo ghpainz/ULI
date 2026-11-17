@@ -311,3 +311,10 @@ export async function autoEditDialog(mediaIds = []) {
     return null;
   }
 }
+
+// Hangi medya kullanılacak: zaman çizelgesi odaktaysa oradaki seçili kliplerin medyası, yoksa Proje panelindeki seçim
+export function selectionMediaIds() {
+  const tl = store.ui.focusedPanel === 'timeline' ? store.selectedClips().filter((c) => c.kind === 'media' && c.mediaId) : [];
+  const ids = tl.length ? tl.map((c) => c.mediaId) : (app.project?.selectedMediaIds() || []);
+  return [...new Set(ids)];
+}
