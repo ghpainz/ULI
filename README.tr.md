@@ -29,6 +29,12 @@ ULI'nin kaynak kodu [MIT lisansı](LICENSE) ile dağıtılır. Kurulum dosyası 
 
 ## Özellikler
 
+**Şablonla Edit Yap** (Sekans menüsü veya Proje panelinde sağ tık)
+- Birkaç video/fotoğraf ve bir şarkı seçin: ULI vuruşları bulur ve saniyeler içinde hazır bir edit kurar — vuruşta kesmeler, geçişler, renk görünümü, başlık, çıkartmalar
+- 5 şablon: Hızlı Montaj, Sinematik, Vlog / Gezi, Glitch / Karanlık, Parti / Kutlama; 16:9, 9:16, 1:1, 4:5 biçimleri
+- Sonuç normal bir sekanstır, her şey sonradan düzenlenebilir
+- Dışa aktarmada YouTube, TikTok / Reels / Shorts, Instagram ve WhatsApp hazır ayarları
+
 **Proje ve medya**
 - Video, ses ve görsel içe aktarma (sürükle-bırak, klasör içe aktarma), klasörler (bin), liste/simge görünümü
 - Tarayıcının oynatamadığı formatlar (ProRes, DNxHD vb.) için otomatik proxy; elle proxy oluşturma/silme, proxy aç/kapat

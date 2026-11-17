@@ -17,6 +17,12 @@ desktop shortcuts and opens `.ulip` project files on double-click. FFmpeg is inc
 
 ## Features
 
+**Auto edit with templates**
+- Pick some videos/photos and a song: ULI detects the beat and builds a finished edit in seconds — cuts on the beat, transitions, color look, title, stickers
+- 5 templates: Fast Montage, Cinematic, Vlog / Travel, Glitch / Dark, Party; formats 16:9, 9:16, 1:1, 4:5
+- The result is a normal sequence, so everything stays editable
+- Export presets for YouTube, TikTok / Reels / Shorts, Instagram and WhatsApp
+
 **Editing**
 - Multi-track timeline with Premiere-style tools: selection, track select, ripple, rolling, rate stretch, razor, slip, slide, pen, hand, zoom, type
 - Insert / overwrite, ripple delete, lift / extract, three-point editing from the Source monitor, subclips, markers

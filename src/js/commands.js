@@ -931,6 +931,7 @@ export function initCommands() {
   def('clip.splitScreen', 'Split Screen...', async () => { const Sp = await import('./splitScreen.js'); Sp.splitScreenDialog(); }, { enabled: hasSel });
   def('clip.sceneDetect', 'Scene Edit Detection...', () => sceneEditDetection(), { enabled: hasSel });
   // Çok kamera
+  def('sequence.autoEdit', 'Auto Edit with Template...', async () => (await import('./autoEdit.js')).autoEditDialog(app.project?.selectedMediaIds() || []));
   def('multicam.create', 'Create Multi-Camera Source Sequence...', () => createMulticamDialog(app.project?.selectedMediaIds() || []));
   def('multicam.enable', 'Enable Multi-Camera', () => toggleMulticam(), { enabled: () => store.selectedClips().some((c) => c.kind === 'sequence') });
   def('multicam.view', 'Multi-Camera View', () => { store.ui.multicamView = !store.ui.multicamView; app.program?.updateButtons(); engine()?.requestRender(); }, { shortcut: 'Shift+0' });
@@ -1256,7 +1257,8 @@ export function menuStructure() {
       { ...item('sequence.snap'), checked: () => store.ui.snapping }, { ...item('sequence.linkedSelection'), checked: () => store.ui.linkedSelection }, '-',
       item('sequence.addTracks'), item('sequence.deleteEmptyTracks'), '-',
       item('caption.add'), item('caption.import'), item('caption.export'), '-',
-      item('audio.record'), item('audio.tts'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'),
+      item('audio.record'), item('audio.tts'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'), '-',
+      item('sequence.autoEdit'),
     ] },
     { label: t('Markers'), items: () => [
       item('mark.in'), item('mark.out'), item('mark.clip'), item('mark.selection'), '-',

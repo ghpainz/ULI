@@ -13,6 +13,15 @@ import { addToQueue } from './exportQueue.js';
 
 const LAST_KEY = 'uli.exportOpts';
 
+// Platform hazır ayarları: kısa kenar (px), kalite (crf) ya da hedef bit hızı (Mbps), önerilen en-boy oranı
+export const PLATFORM_PRESETS = [
+  { id: 'youtube1080', label: 'YouTube 1080p', short: 1080, crf: 18, abr: 320, ratio: [16, 9] },
+  { id: 'youtube4k', label: 'YouTube 4K', short: 2160, crf: 18, abr: 320, ratio: [16, 9] },
+  { id: 'tiktok', label: 'TikTok / Reels / Shorts', short: 1080, bitrate: 12, abr: 256, ratio: [9, 16] },
+  { id: 'instagram', label: 'Instagram (feed)', short: 1080, bitrate: 10, abr: 256, ratio: [4, 5] },
+  { id: 'whatsapp', label: 'WhatsApp / small file', short: 720, crf: 28, abr: 128 },
+];
+
 export async function openExportDialog() {
   const seq = store.seq;
   if (!seq) return;
@@ -75,6 +84,30 @@ export async function openExportDialog() {
   const hasIO = seq.inFrame != null || seq.outFrame != null;
   const range = selectEl([{ value: 'all', label: t('Entire Sequence') }, ...(hasIO ? [{ value: 'io', label: t('Sequence In/Out') }] : [])], hasIO ? 'io' : 'all');
   const summary = el('div', { class: 'muted', style: { marginTop: '10px', lineHeight: '1.6' } });
+  const presetSel = selectEl([{ value: '', label: t('Custom') }, ...PLATFORM_PRESETS.map((x) => ({ value: x.id, label: t(x.label) }))], '');
+  const presetHint = el('span', { class: 'muted', style: { fontSize: '11px' } });
+  presetSel.addEventListener('change', () => {
+    const pr = PLATFORM_PRESETS.find((x) => x.id === presetSel.value);
+    presetHint.textContent = '';
+    if (!pr) return;
+    fmtSel.value = 'mp4_h264';
+    setExt();
+    // sekansın en-boy oranı korunur; kısa kenar platformun önerdiği boyuta getirilir
+    const land = seq.width >= seq.height;
+    const S = pr.short;
+    const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+    match.checked = false;
+    updMatch();
+    wIn.value = land ? even((S * seq.width) / seq.height) : S;
+    hIn.value = land ? S : even((S * seq.height) / seq.width);
+    if (pr.bitrate) { brMode.checked = true; brIn.value = pr.bitrate; } else { brMode.checked = false; quality.value = pr.crf; }
+    abr.value = pr.abr;
+    audioCb.checked = true;
+    if (pr.ratio && Math.abs(seq.width / seq.height - pr.ratio[0] / pr.ratio[1]) > 0.02) {
+      presetHint.textContent = t('Tip: this platform prefers {r}. Change it with Sequence > Canvas / Aspect Ratio.', { r: pr.ratio[0] + ':' + pr.ratio[1] });
+    }
+    vis();
+  });
   const rows = {};
   const row = (key, label, ...inputs) => {
     const l = el('label', { text: label });
@@ -84,6 +117,7 @@ export async function openExportDialog() {
   };
   const grid = el('div', { class: 'form-grid', style: { gridTemplateColumns: '170px 1fr' } },
     el('div', { class: 'form-section', text: t('Export Settings') }),
+    ...row('platform', t('Preset'), presetSel, presetHint),
     ...row('format', t('Format'), fmtSel),
     ...row('file', t('Output Name'), fileIn, browse),
     ...row('range', t('Range'), range),
