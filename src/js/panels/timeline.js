@@ -1604,7 +1604,7 @@ export class TimelinePanel {
         { label: t('Split Screen...'), enabled: c.type === 'video', action: () => C.run('clip.splitScreen') },
         { label: t('Detect Beats'), enabled: c.type === 'audio', action: () => C.run('audio.detectBeats') },
         { label: t('Auto Cut to Beat...'), enabled: c.type === 'video', action: () => C.run('sequence.cutToBeat') },
-        { label: t('Auto Edit with Template...'), action: () => { store.ui.focusedPanel = 'timeline'; C.run('sequence.autoEdit'); } },
+        ...(C.FEATURES?.autoEditTemplates ? [{ label: t('Auto Edit with Template...'), action: () => { store.ui.focusedPanel = 'timeline'; C.run('sequence.autoEdit'); } }] : []),
         { label: t('Open Nested Sequence'), enabled: c.kind === 'sequence', action: () => app.commands.openSequence(c.seqId) },
         { label: t('Scale to Frame Size'), enabled: c.type === 'video', action: () => C.run('clip.scaleToFrame') },
         { label: t('Set to Frame Size'), enabled: c.type === 'video', action: () => C.run('clip.setToFrame') },

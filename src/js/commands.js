@@ -510,7 +510,7 @@ function shortcutsDialog() {
   const render = () => {
     tbl.innerHTML = '';
     const q = search.value.trim().toLocaleLowerCase('tr');
-    const list = allCommands().filter((c) => !c.id.startsWith('multicam.angle') || c.shortcut)
+    const list = allCommands().filter((c) => (!c.id.startsWith('multicam.angle') || c.shortcut) && (c.id !== 'sequence.autoEdit' || FEATURES.autoEditTemplates))
       .filter((c) => !onlySet.checked || c.shortcut)
       .filter((c) => !q || t(c.label).toLocaleLowerCase('tr').includes(q) || (c.shortcut || '').toLowerCase().includes(q))
       .sort((a, b) => t(a.label).localeCompare(t(b.label), 'tr'));
@@ -821,11 +821,15 @@ function frameHold() {
   });
 }
 
+// Menülerde gösterilmeyen (kodu duran ama henüz yayında olmayan) özellikler
+// autoEditTemplates: hazır şablonla otomatik kurgu — kullanıcı yapımı şablonlar gelene kadar gizli (komut: sequence.autoEdit)
+export const FEATURES = { autoEditTemplates: false };
+
 // ---- Komut tanımları ----
 export function initCommands() {
   app.commands = {
     run, openSequence, closeSequence, applyEffect, applyTransition, newSequenceFromMedia, placeSelectedMedia, editMarker,
-    showPanel, label, shortcutOf, isEnabled, newSequence,
+    showPanel, label, shortcutOf, isEnabled, newSequence, FEATURES,
   };
 
   // Dosya
@@ -1257,8 +1261,8 @@ export function menuStructure() {
       { ...item('sequence.snap'), checked: () => store.ui.snapping }, { ...item('sequence.linkedSelection'), checked: () => store.ui.linkedSelection }, '-',
       item('sequence.addTracks'), item('sequence.deleteEmptyTracks'), '-',
       item('caption.add'), item('caption.import'), item('caption.export'), '-',
-      item('audio.record'), item('audio.tts'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'), '-',
-      item('sequence.autoEdit'),
+      item('audio.record'), item('audio.tts'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'),
+      ...(FEATURES.autoEditTemplates ? ['-', item('sequence.autoEdit')] : []),
     ] },
     { label: t('Markers'), items: () => [
       item('mark.in'), item('mark.out'), item('mark.clip'), item('mark.selection'), '-',

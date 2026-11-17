@@ -1,7 +1,7 @@
 {
   "name": "uli",
   "productName": "ULI",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "ULI — Premiere Pro sadeliğinde, CapCut zenginliğinde video kurgu uygulaması",
   "main": "main.js",
   "scripts": {

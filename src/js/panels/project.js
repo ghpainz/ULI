@@ -383,7 +383,7 @@ export class ProjectPanel {
         { label: t('Add Video Only to Timeline'), enabled: !!m.hasVideo, action: () => app.commands.placeSelectedMedia(this.selectedMediaIds(), 'video') },
         { label: t('Add Audio Only to Timeline'), enabled: !!m.hasAudio && m.type !== 'image', action: () => app.commands.placeSelectedMedia(this.selectedMediaIds(), 'audio') },
         { label: t('Make Subclip...'), enabled: m.type !== 'image', action: () => { store.ui.focusedPanel = 'project'; app.commands.run('clip.makeSubclip'); } },
-        { label: t('Auto Edit with Template...'), enabled: this.selectedMediaIds().some((x) => p.media[x]?.hasVideo || p.media[x]?.type === 'image'), action: () => app.commands.run('sequence.autoEdit') },
+        ...(app.commands.FEATURES?.autoEditTemplates ? [{ label: t('Auto Edit with Template...'), enabled: this.selectedMediaIds().some((x) => p.media[x]?.hasVideo || p.media[x]?.type === 'image'), action: () => app.commands.run('sequence.autoEdit') }] : []),
         { label: t('Create Multi-Camera Source Sequence...'), enabled: this.selectedMediaIds().filter((x) => p.media[x]?.hasVideo).length >= 2, action: () => app.commands.run('multicam.create') },
         '-',
         { label: t('Rename'), action: () => this.rename(key) },

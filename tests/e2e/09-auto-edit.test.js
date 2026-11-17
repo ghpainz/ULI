@@ -71,3 +71,13 @@ const t1 = place(camA, 0, { a: 0, outS: 3 }), t2 = place(scn, 90, { a: 0, outS: 
 U.store.select([t1[0], t2[0]]); U.store.ui.focusedPanel = 'timeline';
 const tsel = Aa.selectionMediaIds();
 check('timeline selection feeds the template dialog', tsel.length === 2 && tsel.includes(camA.id) && tsel.includes(scn.id), tsel);
+// şablon özelliği şimdilik gizli: menülerde ve kısayol düzenleyicide görünmemeli (komut çalışmaya devam eder)
+const C9 = await import('./js/commands.js');
+const tops = [...document.querySelectorAll('#menubar .menu-top')];
+let seen = false;
+for (const top of tops) {
+  top.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); await sleep(80);
+  if (/Auto Edit with Template|Şablonla Edit Yap/.test(document.body.innerText)) seen = true;
+  document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); await sleep(40);
+}
+check('template feature hidden from menus while FEATURES.autoEditTemplates is off', !C9.FEATURES.autoEditTemplates && !seen);
