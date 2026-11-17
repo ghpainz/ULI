@@ -8,6 +8,9 @@ import { rt, thumbOf, mediaEvents, importFiles, createProxy, deleteProxy, cancel
 import { jobs } from '../ffmpeg.js';
 import { contextMenu, confirmDialog, promptDialog, alertDialog, modal, toast } from '../ui/dialogs.js';
 
+// kaydedilmemiş projenin varsayılan adı her zaman geçerli dilde gösterilir
+const projectDisplayName = (n) => (!n || n === 'Untitled' || n === 'Adsız' ? t('Untitled') : n);
+
 export class ProjectPanel {
   constructor() {
     this.id = 'project';
@@ -17,7 +20,7 @@ export class ProjectPanel {
     this.lastClicked = null;
     this._render = rafThrottle(() => this.render());
   }
-  title() { return t('Project') + ': ' + (store.project.name || t('Untitled')); }
+  title() { return t('Project') + ': ' + projectDisplayName(store.project.name); }
 
   mount(body) {
     const tb = el('div', { class: 'toolbar' });
@@ -139,7 +142,7 @@ export class ProjectPanel {
     let b = p.bins[store.ui.currentBin];
     while (b) { chain.unshift(b); b = b.parent ? p.bins[b.parent] : null; }
     chain.forEach((bin, i) => {
-      const s = el('span', { text: bin.id === 'root' ? (p.name || t('Untitled')) : bin.name });
+      const s = el('span', { text: bin.id === 'root' ? projectDisplayName(p.name) : bin.name });
       s.addEventListener('click', () => { store.ui.currentBin = bin.id; this.render(); });
       if (i) this.crumb.appendChild(document.createTextNode(' › '));
       this.crumb.appendChild(s);

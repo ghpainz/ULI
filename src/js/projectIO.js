@@ -39,7 +39,7 @@ export async function saveProject(saveAs = false) {
   if (!file || saveAs) {
     const r = await ipc.invoke('dialog:save', {
       title: t('Save Project'),
-      defaultPath: file || nodePath.join(app.paths.documents, (store.project.name || 'Untitled') + '.' + PROJECT_EXT),
+      defaultPath: file || nodePath.join(app.paths.documents, (store.project.name || t('Untitled')) + '.' + PROJECT_EXT),
       filters: [{ name: 'ULI Project', extensions: [PROJECT_EXT] }],
     });
     if (r.canceled || !r.filePath) return false;
@@ -63,7 +63,7 @@ export async function saveProject(saveAs = false) {
 export async function saveCopy() {
   const r = await ipc.invoke('dialog:save', {
     title: t('Save a Copy'),
-    defaultPath: nodePath.join(app.paths.documents, (store.project.name || 'Untitled') + ' copy.' + PROJECT_EXT),
+    defaultPath: nodePath.join(app.paths.documents, (store.project.name || t('Untitled')) + ' copy.' + PROJECT_EXT),
     filters: [{ name: 'ULI Project', extensions: [PROJECT_EXT] }],
   });
   if (r.canceled || !r.filePath) return;
@@ -117,7 +117,7 @@ export async function newProject() {
   if (!(await confirmDiscard())) return false;
   app.engine?.disposeAll();
   clearRuntime();
-  store.setProject(createProject(t('Untitled')), null);
+  store.setProject(createProject(''), null);
   updateTitle();
   return true;
 }

@@ -1,7 +1,7 @@
 // ULI - uygulama girişi
 import { store } from './store.js';
 import { app } from './appContext.js';
-import { t, setLang, getLang } from './i18n.js';
+import { t, setLang, getLang, retranslateDom } from './i18n.js';
 import { el, ipc, nodePath, rafThrottle, gainToDb, clamp } from './util.js';
 import { loadSettings, settings, saveSettings } from './settings.js';
 import { initFF, jobs, jobList, ff } from './ffmpeg.js';
@@ -203,8 +203,13 @@ function toggleMaximize() {
   for (const p of panels.values()) if (p.onResize) p.onResize();
 }
 
+let shownLang = null;
 function relocalize() {
-  document.documentElement.lang = getLang();
+  const lang = getLang();
+  // önce ekranda kalan sabit yazıları çevir, sonra dinamik bölümleri yeniden çiz
+  retranslateDom(document.body, shownLang || (lang === 'tr' ? 'en' : 'tr'), lang);
+  shownLang = lang;
+  document.documentElement.lang = lang;
   buildMenubar();
   buildTools();
   refreshTabTitles();
@@ -221,6 +226,7 @@ async function boot() {
   app.paths = paths;
   loadSettings(paths.userData);
   setLang(getLang());
+  shownLang = getLang();
   store.settings = settings;
   store.ui.useProxies = settings.useProxies !== false;
   store.ui.playbackRes = settings.playbackRes || 'auto';
