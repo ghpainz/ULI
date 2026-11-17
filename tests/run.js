@@ -39,6 +39,15 @@ function runOne(file) {
     const script = path.join(os.tmpdir(), 'uli_test_' + path.basename(file));
     fs.writeFileSync(script, fs.readFileSync(path.join(E2E, '_prelude.js'), 'utf8').replace('/*__TEST_BODY__*/', fs.readFileSync(file, 'utf8')));
     const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'uli-test-'));
+    // konuşma modeli (otomatik altyazı testleri): tests/.models içindekiler geçici veri klasörüne bağlanır (indirme yok)
+    const MODELS = path.join(__dirname, '.models');
+    if (fs.existsSync(MODELS)) {
+      fs.mkdirSync(path.join(userData, 'models'), { recursive: true });
+      for (const f of fs.readdirSync(MODELS)) {
+        const dst = path.join(userData, 'models', f);
+        try { fs.linkSync(path.join(MODELS, f), dst); } catch (e) { fs.copyFileSync(path.join(MODELS, f), dst); }
+      }
+    }
     const env = { ...process.env, ULI_TEST: script, ULI_TEST_USERDATA: userData, ULI_TEST_MEDIA: MEDIA };
     const p = spawn(electron, [ROOT], { env, windowsHide: true });
     let buf = '';

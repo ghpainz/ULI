@@ -77,6 +77,11 @@ ULI'nin kaynak kodu [MIT lisansı](LICENSE) ile dağıtılır. Kurulum dosyası 
 - 47 video geçişi (Yumuşak Yakınlaşma/Uzaklaşma, Flaş, Mürekkep, Film Yanığı, Kalp/Yıldız/Elmas/Saat silme, Küp Dönüşü, Kapı Açılışı, Dönme, Whip Pan, Glitch dahil) ve 3 ses geçişi; geçiş hizalaması (kesmede ortala/başla/bitir) (Ctrl+D / Ctrl+Shift+D varsayılan geçiş)
 - Hız/süre (ters oynatma dahil), kare dondurma
 
+**Otomatik altyazı** (Altyazılar paneli > ✨ Otomatik Altyazı veya Sekans menüsü)
+- Konuşmayı tamamen bu bilgisayarda yazıya çevirir (Whisper): Türkçe, İngilizce ve diğer diller, dil otomatik algılanır
+- Altyazılar konuşmaya göre zamanlanır ve okunaklı satırlara bölünür; kelime kelime stiller (söylenen kelime sarı, kelime kutusu, tek tek kelimeler)
+- Konuşma modeli ilk kullanımda bir kez indirilir (Hızlı 190 MB / En İyi 574 MB)
+
 **Ses**
 - Klip ses seviyesi ve pan keyframe'leri, iz mikseri (fader, pan, M/S), ana çıkış, ses ölçerleri
 - Temel Ses paneli: klibi Diyalog/Müzik/Efekt/Ortam olarak işaretle; ses yüksekliğini hedef LUFS'a otomatik eşle, gürültü/uğultu/sızıltı onarımı, konuşmayı güçlendirme, müziği diyaloğun altında otomatik kısma (ducking)

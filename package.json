@@ -1,12 +1,14 @@
 {
   "name": "uli",
   "productName": "ULI",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ULI — Premiere Pro sadeliğinde, CapCut zenginliğinde video kurgu uygulaması",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "predist": "node tools/fetch-whisper.js",
     "dist": "electron-builder --win nsis --x64",
+    "fetch-whisper": "node tools/fetch-whisper.js",
     "test": "node tests/run.js"
   },
   "license": "MIT",
@@ -44,6 +46,12 @@
       {
         "from": "node_modules/ffmpeg-static/ffmpeg.exe.LICENSE",
         "to": "licenses/FFmpeg-GPL-3.0.txt"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/whisper",
+        "to": "whisper"
       }
     ],
     "asarUnpack": [

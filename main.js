@@ -189,7 +189,11 @@ ipcMain.handle('app:paths', () => {
   try { ffmpeg = binPath(require('ffmpeg-static')); } catch (e) { /* yok */ }
   try { ffprobe = binPath(require('ffprobe-static').path); } catch (e) { /* yok */ }
   const userData = app.getPath('userData');
+  // konuşmayı yazıya çevirme motoru (otomatik altyazı): kurulumda resources/whisper, geliştirmede vendor/whisper
+  const wDir = app.isPackaged ? path.join(process.resourcesPath, 'whisper') : path.join(__dirname, 'vendor', 'whisper');
+  const whisper = fs.existsSync(path.join(wDir, 'whisper-cli.exe')) ? path.join(wDir, 'whisper-cli.exe') : null;
   return {
+    whisper,
     ffmpeg,
     ffprobe,
     userData,

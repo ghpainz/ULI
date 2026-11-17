@@ -22,6 +22,19 @@ keeps its own license; ULI runs FFmpeg and FFprobe as separate programs
 - License: **GNU General Public License v3.0**
 - Source code: https://github.com/FFmpeg/FFmpeg/tree/n4.0.2
 
+## whisper.cpp (speech recognition for Auto Captions)
+
+- Version: b5454, Windows x64 build from https://github.com/ggml-org/whisper.cpp/releases
+  (`whisper-cli.exe`, `whisper.dll`, `ggml*.dll`, installed under `resources/whisper`)
+- License: **MIT** — Copyright (c) 2023-2026 The ggml authors
+- ULI runs it as a separate program; audio never leaves the computer.
+
+## Whisper speech models (downloaded on first use, not bundled)
+
+- `ggml-small-q5_1.bin` / `ggml-large-v3-turbo-q5_0.bin` from https://huggingface.co/ggerganov/whisper.cpp
+- Original models: OpenAI Whisper, **MIT License** — Copyright (c) 2022 OpenAI
+- Downloaded to `%APPDATA%\ULI\models` only when the user starts Auto Captions; verified with SHA-256.
+
 ## Electron
 
 - Version: 38, https://www.electronjs.org/

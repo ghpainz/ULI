@@ -1170,6 +1170,7 @@ export function initCommands() {
       if (box) box.focus();
     }, 80);
   }, { shortcut: 'Ctrl+Alt+C', enabled: hasSeq });
+  def('caption.auto', 'Auto Captions...', async () => (await import('./autoCaptions.js')).autoCaptionsDialog(), { enabled: hasSeq });
   def('caption.import', 'Import Captions (SRT/VTT)...', async () => {
     const r = await ipc.invoke('dialog:open', { title: t('Import Captions (SRT/VTT)...'), properties: ['openFile'], filters: [{ name: 'SRT / WebVTT', extensions: ['srt', 'vtt'] }] });
     if (r.canceled || !r.filePaths.length) return;
@@ -1260,7 +1261,7 @@ export function menuStructure() {
       item('sequence.matchFrame'), item('sequence.zoomIn'), item('sequence.zoomOut'), item('sequence.zoomFit'), '-',
       { ...item('sequence.snap'), checked: () => store.ui.snapping }, { ...item('sequence.linkedSelection'), checked: () => store.ui.linkedSelection }, '-',
       item('sequence.addTracks'), item('sequence.deleteEmptyTracks'), '-',
-      item('caption.add'), item('caption.import'), item('caption.export'), '-',
+      item('caption.auto'), item('caption.add'), item('caption.import'), item('caption.export'), '-',
       item('audio.record'), item('audio.tts'), item('audio.sync'), '-', item('audio.detectBeats'), item('sequence.cutToBeat'), item('marker.clearBeats'),
       ...(FEATURES.autoEditTemplates ? ['-', item('sequence.autoEdit')] : []),
     ] },

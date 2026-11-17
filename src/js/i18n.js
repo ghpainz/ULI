@@ -36,6 +36,8 @@ export function retranslateDom(root, from, to) {
     let out = one(core);
     // "Giriş İşaretle (I)" gibi sonuna kısayol eklenmiş ipuçları
     if (out == null) { const s = /^(.+?)(\s\([^()]+\))$/.exec(core); if (s) { const o = one(s[1]); if (o != null) out = o + s[2]; } }
+    // "✨ Otomatik Altyazı" gibi başında simge olan yazılar
+    if (out == null) { const s = /^([^\p{L}\p{N}]+\s)(.+)$/u.exec(core); if (s) { const o = one(s[2]); if (o != null) out = s[1] + o; } }
     return out == null ? null : m[1] + out + m[3];
   };
   const skip = (e) => !e || e.closest('textarea, [contenteditable="true"], [data-no-i18n]');

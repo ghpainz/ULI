@@ -13,7 +13,37 @@ export const DEFAULT_CAPTION_STYLE = {
   bgColor: '#000000',
   bgOpacity: 65,
   margin: 7, // alttan % uzaklık
+  anim: 'none', // none | karaoke (konuşulan kelime renkli) | box (kelime renkli kutuda) | single (tek kelime)
+  hlColor: '#ffd60a',
 };
+
+// Hazır altyazı stilleri
+export const CAPTION_PRESETS = [
+  { id: 'classic', name: 'Classic', st: { font: 'Segoe UI', size: 54, bold: false, color: '#ffffff', outline: 0, bgEnabled: true, bgColor: '#000000', bgOpacity: 65, margin: 7, anim: 'none' } },
+  { id: 'social', name: 'Social (yellow word)', st: { font: 'Arial Black', size: 74, bold: true, color: '#ffffff', outline: 6, outlineColor: '#000000', bgEnabled: false, margin: 24, anim: 'karaoke', hlColor: '#ffd60a' } },
+  { id: 'box', name: 'Word box', st: { font: 'Arial Black', size: 70, bold: true, color: '#ffffff', outline: 0, bgEnabled: false, margin: 24, anim: 'box', hlColor: '#7b2ff7' } },
+  { id: 'single', name: 'One word at a time', st: { font: 'Arial Black', size: 120, bold: true, color: '#ffffff', outline: 8, outlineColor: '#000000', bgEnabled: false, margin: 40, anim: 'single', hlColor: '#ffd60a' } },
+  { id: 'minimal', name: 'Minimal', st: { font: 'Segoe UI', size: 50, bold: true, color: '#ffffff', outline: 0, bgEnabled: false, margin: 8, anim: 'none' } },
+];
+
+// Altyazının kelimeleri metinde hâlâ aynı sırada mı (kullanıcı metni değiştirdiyse vurgu kapanır): her kelimenin [başla, bitir) karakter konumu
+function wordSpans(cap) {
+  if (!cap.words || !cap.words.length) return null;
+  const spans = [];
+  let pos = 0;
+  for (const w of cap.words) {
+    const i = cap.text.indexOf(w.text, pos);
+    if (i < 0) return null;
+    spans.push([i, i + w.text.length]);
+    pos = i + w.text.length;
+  }
+  return spans;
+}
+function activeWord(cap, f) {
+  let k = -1;
+  for (let i = 0; i < cap.words.length; i++) if (cap.words[i].start <= f) k = i; else break;
+  return k;
+}
 
 export function ensureCaptions(seq) {
   if (!seq.captions) seq.captions = [];
@@ -50,12 +80,21 @@ export function addCaption(seq, f, text = '') {
 
 // Render için sentetik metin klibi (compositor'ın metin yolunu kullanır)
 const synthCache = new Map();
-export function captionClip(seq, cap) {
+export function captionClip(seq, cap, f = null) {
   const st = { ...DEFAULT_CAPTION_STYLE, ...(seq.captionStyle || {}) };
   const k = seq.height / 1080;
   const key = cap.id + '|' + seq.width + 'x' + seq.height;
+  // kelime kelime animasyon (yalnız otomatik altyazılarda kelime zamanları vardır)
+  let shown = cap.text || ' ', hl = null;
+  const spans = st.anim && st.anim !== 'none' && f != null ? wordSpans(cap) : null;
+  if (spans) {
+    const a = Math.max(0, activeWord(cap, f));
+    if (st.anim === 'single') shown = cap.words[a].text;
+    else if (st.anim === 'karaoke') hl = { from: spans[a][0], to: spans[a][1], color: st.hlColor };
+    else if (st.anim === 'box') hl = { from: spans[a][0], to: spans[a][1], box: st.hlColor };
+  }
   const text = {
-    text: cap.text || ' ',
+    text: shown, hl,
     font: st.font, size: Math.max(6, st.size * k), bold: st.bold, italic: st.italic, align: 'center', color: st.color,
     strokeWidth: (st.outline || 0) * k, strokeColor: st.outlineColor,
     shadow: !st.bgEnabled, shadowColor: '#000000', shadowBlur: 6 * k, shadowDist: 2 * k,

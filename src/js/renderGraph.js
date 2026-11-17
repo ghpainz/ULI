@@ -158,7 +158,7 @@ export function videoLayersAt(project, seq, f, depth = 0, onlyTrack = null, with
   // altyazılar en üstte (yalnız en dış sekansta)
   if ((depth === 0 || withCaptions) && seq.captions && seq.captions.length && seq.captionsVisible !== false) {
     const cap = captionAt(seq, f);
-    if (cap && cap.text) layers.push({ type: 'clip', track: nTracks, item: { clip: captionClip(seq, cap), media: null, local: f - cap.start, srcTime: 0, ownerSeq: seq, f } });
+    if (cap && cap.text) layers.push({ type: 'clip', track: nTracks, item: { clip: captionClip(seq, cap, f), media: null, local: f - cap.start, srcTime: 0, ownerSeq: seq, f } });
   }
   return layers;
 }

@@ -3,7 +3,8 @@ import { store } from '../store.js';
 import { app } from '../appContext.js';
 import { t } from '../i18n.js';
 import { el, framesToTC, parseTC, rafThrottle } from '../util.js';
-import { DEFAULT_CAPTION_STYLE, captionAt } from '../captions.js';
+import { DEFAULT_CAPTION_STYLE, CAPTION_PRESETS, captionAt } from '../captions.js';
+import { selectEl } from '../ui/dialogs.js';
 import { fontPicker } from '../ui/fontPicker.js';
 
 export class CaptionsPanel {
@@ -24,7 +25,9 @@ export class CaptionsPanel {
     exp.addEventListener('click', () => app.commands.run('caption.export'));
     this.styleBtn = el('button', { text: t('Style'), style: { padding: '1px 8px' } });
     this.styleBtn.addEventListener('click', () => { this.showStyle = !this.showStyle; this.render(); });
-    tb.append(add, imp, exp, el('span', { class: 'grow' }), this.styleBtn);
+    const auto = el('button', { text: '✨ ' + t('Auto Captions'), style: { padding: '1px 8px' }, title: t('Auto Captions...') });
+    auto.addEventListener('click', () => app.commands.run('caption.auto'));
+    tb.append(add, auto, imp, exp, el('span', { class: 'grow' }), this.styleBtn);
     this.styleBox = el('div', { style: { borderBottom: '1px solid #2a2a2a' } });
     this.list = el('div', { class: 'list-view' });
     body.append(tb, this.styleBox, this.list);
@@ -48,6 +51,7 @@ export class CaptionsPanel {
     const num = (k, min, max) => { const i = el('input', { type: 'number', min, max, style: { width: '60px' } }); i.value = st[k]; i.addEventListener('change', () => setSt(k, +i.value)); return i; };
     const col = (k) => { const i = el('input', { type: 'color', value: st[k] }); i.addEventListener('change', () => setSt(k, i.value)); return i; };
     const chk = (k) => { const i = el('input', { type: 'checkbox' }); i.checked = !!st[k]; i.addEventListener('change', () => setSt(k, i.checked)); return i; };
+    const anim = selectEl([['none', 'None'], ['karaoke', 'Highlight spoken word'], ['box', 'Spoken word in a box'], ['single', 'One word at a time']].map(([v, l]) => ({ value: v, label: t(l) })), st.anim || 'none', (v) => setSt('anim', v));
     const grid = el('div', { class: 'form-grid', style: { gridTemplateColumns: '110px 1fr', padding: '8px', gap: '6px 10px' } },
       el('label', { text: t('Font') }), el('div', { class: 'inline' }, font, chk('bold'), el('span', { text: 'B' }), chk('italic'), el('span', { text: 'I' })),
       el('label', { text: t('Size') }), num('size', 8, 300),
@@ -55,7 +59,11 @@ export class CaptionsPanel {
       el('label', { text: t('Stroke') }), el('div', { class: 'inline' }, col('outlineColor'), num('outline', 0, 30)),
       el('label', { text: t('Background') }), el('div', { class: 'inline' }, chk('bgEnabled'), col('bgColor'), num('bgOpacity', 0, 100), el('span', { text: '%' })),
       el('label', { text: t('Bottom Margin') }), el('div', { class: 'inline' }, num('margin', 0, 90), el('span', { text: '%' })),
+      el('label', { text: t('Word Animation') }), el('div', { class: 'inline' }, anim, col('hlColor')),
     );
+    const presetRow = el('div', { class: 'inline', style: { padding: '8px 8px 0', gap: '6px', flexWrap: 'wrap' } }, el('span', { text: t('Presets') + ':', class: 'muted' }),
+      ...CAPTION_PRESETS.map((pr) => { const b = el('button', { text: t(pr.name), style: { padding: '1px 8px' } }); b.addEventListener('click', () => this._commit('Caption Style', (s) => { s.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(s.captionStyle || {}), ...pr.st }; })); return b; }));
+    this.styleBox.appendChild(presetRow);
     this.styleBox.appendChild(grid);
   }
 

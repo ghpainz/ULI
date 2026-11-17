@@ -38,6 +38,11 @@ desktop shortcuts and opens `.ulip` project files on double-click. FFmpeg is inc
 
 ![Graphics](docs/screenshots/graphics.png)
 
+**Auto captions**
+- Speech-to-text that runs entirely on your computer (Whisper) — Turkish, English and more, with automatic language detection
+- Captions are timed to the speech and split into readable lines; word-by-word styles (highlighted word, word box, one word at a time)
+- The speech model is downloaded once on first use (190 MB fast / 574 MB best)
+
 **Audio**
 - Track mixer, Essential Sound (loudness matching, repair, ducking), audio effects, voice changer
 - Built-in sound effect library, text-to-speech (Windows voices), voice-over recording
@@ -66,7 +71,6 @@ settings or recent projects. Test videos are generated with FFmpeg into `tests/.
 
 ## Roadmap
 
-- Automatic captions (speech-to-text)
 - AI tools: background removal, auto reframe
 - Code-signed installer and automatic updates
 - macOS and Linux builds

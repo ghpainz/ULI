@@ -81,6 +81,12 @@ export function renderTextCanvas(t) {
   const ex = t.extrude && t.extrude.on && (t.extrude.depth || 0) > 0 ? t.extrude : null;
   const xFor = (w) => (t.align === 'left' ? pad : t.align === 'right' ? pad + maxW - w : pad + (maxW - w) / 2);
 
+  // vurgu aralığı (tüm metindeki karakter konumu) → satır içi aralık
+  const hlRanges = {};
+  if (t.hl && t.hl.to > t.hl.from) {
+    let off = 0;
+    lines.forEach((l, i) => { const a = Math.max(t.hl.from, off), b = Math.min(t.hl.to, off + l.length); if (b > a) hlRanges[i] = [a - off, b - off]; off += l.length + 1; });
+  }
   lines.forEach((line, i) => {
     const y = pad + lh * i + lh / 2;
     const x = xFor(widths[i]);
@@ -140,9 +146,26 @@ export function renderTextCanvas(t) {
       noShadow();
     }
     // 4) dolgu
+    const hl = hlRanges[i];
+    if (hl && t.hl.box) {
+      // etkin kelimenin arkasına renkli kutu (CapCut tarzı)
+      const bx = x + ctx.measureText(line.slice(0, hl[0])).width, bw = ctx.measureText(line.slice(hl[0], hl[1])).width;
+      const px = t.size * 0.14;
+      noShadow();
+      ctx.fillStyle = t.hl.box;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(bx - px, y - lh * 0.46, bw + px * 2, lh * 0.92, t.size * 0.16); else ctx.rect(bx - px, y - lh * 0.46, bw + px * 2, lh * 0.92);
+      ctx.fill();
+    }
     applyShadow();
     ctx.fillStyle = fillStyle;
     ctx.fillText(line, x, y);
+    if (hl && t.hl.color) {
+      // etkin kelimeyi vurgu rengiyle yeniden boya
+      noShadow();
+      ctx.fillStyle = t.hl.color;
+      ctx.fillText(line.slice(hl[0], hl[1]), x + ctx.measureText(line.slice(0, hl[0])).width, y);
+    }
     ctx.restore();
   });
   return cv;
