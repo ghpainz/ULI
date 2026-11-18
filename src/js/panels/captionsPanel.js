@@ -5,6 +5,7 @@ import { t } from '../i18n.js';
 import { el, framesToTC, parseTC, rafThrottle } from '../util.js';
 import { DEFAULT_CAPTION_STYLE, CAPTION_PRESETS, captionAt } from '../captions.js';
 import { selectEl } from '../ui/dialogs.js';
+import { settings, saveSettings } from '../settings.js';
 import { fontPicker } from '../ui/fontPicker.js';
 
 export class CaptionsPanel {
@@ -16,6 +17,7 @@ export class CaptionsPanel {
   title() { return t('Captions'); }
 
   mount(body) {
+    app.captionsPanel = this;
     const tb = el('div', { class: 'toolbar' });
     const add = el('button', { class: 'icon', text: '＋', title: t('Add Caption') + ' (Ctrl+Alt+C)' });
     add.addEventListener('click', () => app.commands.run('caption.add'));
@@ -23,12 +25,13 @@ export class CaptionsPanel {
     imp.addEventListener('click', () => app.commands.run('caption.import'));
     const exp = el('button', { text: t('Export SRT...'), style: { padding: '1px 8px' } });
     exp.addEventListener('click', () => app.commands.run('caption.export'));
-    this.styleBtn = el('button', { text: t('Style'), style: { padding: '1px 8px' } });
+    this.showStyle = true;
+    this.styleBtn = el('button', { text: '🎨 ' + t('Style'), title: t('Caption appearance: font, size, colors, position'), style: { padding: '1px 8px' } });
     this.styleBtn.addEventListener('click', () => { this.showStyle = !this.showStyle; this.render(); });
     const auto = el('button', { text: '✨ ' + t('Auto Captions'), style: { padding: '1px 8px' }, title: t('Auto Captions...') });
     auto.addEventListener('click', () => app.commands.run('caption.auto'));
     tb.append(add, auto, imp, exp, el('span', { class: 'grow' }), this.styleBtn);
-    this.styleBox = el('div', { style: { borderBottom: '1px solid #2a2a2a' } });
+    this.styleBox = el('div', { style: { borderBottom: '1px solid #2a2a2a', maxHeight: '62%', overflowY: 'auto', flexShrink: 0 } });
     this.list = el('div', { class: 'list-view' });
     body.append(tb, this.styleBox, this.list);
     store.on('change', (info) => { if (!(info && info.live) && !this._editing) this._render(); });
@@ -46,23 +49,46 @@ export class CaptionsPanel {
     this.styleBox.innerHTML = '';
     if (!this.showStyle || !seq) return;
     const st = { ...DEFAULT_CAPTION_STYLE, ...(seq.captionStyle || {}) };
-    const setSt = (k, v) => this._commit('Caption Style', (s) => { s.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(s.captionStyle || {}), [k]: v }; });
-    const font = fontPicker(st.font, (f) => setSt('font', f), { width: 160 });
-    const num = (k, min, max) => { const i = el('input', { type: 'number', min, max, style: { width: '60px' } }); i.value = st[k]; i.addEventListener('change', () => setSt(k, +i.value)); return i; };
-    const col = (k) => { const i = el('input', { type: 'color', value: st[k] }); i.addEventListener('change', () => setSt(k, i.value)); return i; };
+    // her değişiklik bu sekansa uygulanır ve yeni projeler için varsayılan olarak hatırlanır
+    const setMany = (o) => {
+      this._commit('Caption Style', (s) => { s.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(s.captionStyle || {}), ...o }; });
+      settings.captionStyleDefault = { ...(store.seq?.captionStyle || {}) };
+      saveSettings();
+    };
+    const setSt = (k, v) => setMany({ [k]: v });
+    const font = fontPicker(st.font, (f) => setSt('font', f), { width: 170 });
+    const num = (k, min, max, w = 56) => { const i = el('input', { type: 'number', min, max, style: { width: w + 'px' } }); i.value = st[k]; i.addEventListener('change', () => setSt(k, +i.value)); return i; };
+    const col = (k) => { const i = el('input', { type: 'color', value: st[k], title: t('Pick a color') }); i.addEventListener('change', () => setSt(k, i.value)); return i; };
     const chk = (k) => { const i = el('input', { type: 'checkbox' }); i.checked = !!st[k]; i.addEventListener('change', () => setSt(k, i.checked)); return i; };
+    const slider = (k, min, max) => { const r = el('input', { type: 'range', min, max, step: 1, style: { width: '120px' } }); r.value = st[k]; r.addEventListener('change', () => setSt(k, +r.value)); return r; };
+    const btn = (label, fn, title) => { const b = el('button', { text: label, title: title || label, style: { padding: '1px 8px' } }); b.addEventListener('click', fn); return b; };
     const anim = selectEl([['none', 'None'], ['karaoke', 'Highlight spoken word'], ['box', 'Spoken word in a box'], ['single', 'One word at a time']].map(([v, l]) => ({ value: v, label: t(l) })), st.anim || 'none', (v) => setSt('anim', v));
-    const grid = el('div', { class: 'form-grid', style: { gridTemplateColumns: '110px 1fr', padding: '8px', gap: '6px 10px' } },
-      el('label', { text: t('Font') }), el('div', { class: 'inline' }, font, chk('bold'), el('span', { text: 'B' }), chk('italic'), el('span', { text: 'I' })),
-      el('label', { text: t('Size') }), num('size', 8, 300),
-      el('label', { text: t('Fill') }), col('color'),
-      el('label', { text: t('Stroke') }), el('div', { class: 'inline' }, col('outlineColor'), num('outline', 0, 30)),
-      el('label', { text: t('Background') }), el('div', { class: 'inline' }, chk('bgEnabled'), col('bgColor'), num('bgOpacity', 0, 100), el('span', { text: '%' })),
-      el('label', { text: t('Bottom Margin') }), el('div', { class: 'inline' }, num('margin', 0, 90), el('span', { text: '%' })),
-      el('label', { text: t('Word Animation') }), el('div', { class: 'inline' }, anim, col('hlColor')),
+    const SW = ['#ffd60a', '#ff9f0a', '#ff2d55', '#bf5af2', '#0a84ff', '#34c759', '#ffffff'];
+    const swatches = el('div', { class: 'inline', style: { gap: '4px' } }, ...SW.map((c) => {
+      const b = el('button', { title: c, style: { width: '18px', height: '18px', padding: 0, background: c, border: st.hlColor.toLowerCase() === c ? '2px solid #fff' : '1px solid #555', borderRadius: '3px' } });
+      b.addEventListener('click', () => setSt('hlColor', c));
+      return b;
+    }), col('hlColor'));
+    const sec = (text) => el('div', { class: 'form-section', text, style: { gridColumn: '1 / -1', marginTop: '4px' } });
+    const grid = el('div', { class: 'form-grid', style: { gridTemplateColumns: '110px 1fr', padding: '6px 8px 8px', gap: '6px 10px' } },
+      sec(t('Text')),
+      el('label', { text: t('Font') }), el('div', { class: 'inline' }, font, chk('bold'), el('b', { text: 'B' }), chk('italic'), el('i', { text: 'I' })),
+      el('label', { text: t('Size') }), el('div', { class: 'inline' }, slider('size', 16, 200), num('size', 8, 300)),
+      el('label', { text: t('Text Color') }), col('color'),
+      el('label', { text: t('Outline') }), el('div', { class: 'inline' }, col('outlineColor'), num('outline', 0, 30), el('span', { text: 'px', class: 'muted' })),
+      el('label', { text: t('Background') }), el('div', { class: 'inline' }, chk('bgEnabled'), col('bgColor'), num('bgOpacity', 0, 100), el('span', { text: '%', class: 'muted' })),
+      sec(t('Position')),
+      el('label', { text: t('Quick Place') }), el('div', { class: 'inline', style: { gap: '4px' } },
+        btn(t('Top'), () => setMany({ margin: 82 })), btn(t('Middle'), () => setMany({ margin: 45 })), btn(t('Bottom'), () => setMany({ margin: 7 })), btn(t('Center horizontally'), () => setMany({ x: 50 }))),
+      el('label', { text: t('Horizontal') }), el('div', { class: 'inline' }, num('x', 0, 100), el('span', { text: '%', class: 'muted' })),
+      el('label', { text: t('From Bottom') }), el('div', { class: 'inline' }, num('margin', 0, 95), el('span', { text: '%', class: 'muted' })),
+      el('div', { text: t('Tip: drag a caption on the Program monitor to move it.'), style: { gridColumn: '1 / -1', color: 'var(--text-dim)', fontSize: '11px' } }),
+      sec(t('Word Highlight')),
+      el('label', { text: t('Animation') }), anim,
+      el('label', { text: t('Word Highlight Color') }), swatches,
     );
     const presetRow = el('div', { class: 'inline', style: { padding: '8px 8px 0', gap: '6px', flexWrap: 'wrap' } }, el('span', { text: t('Presets') + ':', class: 'muted' }),
-      ...CAPTION_PRESETS.map((pr) => { const b = el('button', { text: t(pr.name), style: { padding: '1px 8px' } }); b.addEventListener('click', () => this._commit('Caption Style', (s) => { s.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(s.captionStyle || {}), ...pr.st }; })); return b; }));
+      ...CAPTION_PRESETS.map((pr) => btn(t(pr.name), () => setMany(pr.st))));
     this.styleBox.appendChild(presetRow);
     this.styleBox.appendChild(grid);
   }

@@ -1,5 +1,6 @@
 // Altyazılar: sekans başına altyazı listesi, stil, SRT/VTT içe-dışa aktarma ve render için sentetik metin klibi
 import { uid } from './util.js';
+import { settings } from './settings.js';
 
 export const DEFAULT_CAPTION_STYLE = {
   font: 'Segoe UI',
@@ -13,6 +14,7 @@ export const DEFAULT_CAPTION_STYLE = {
   bgColor: '#000000',
   bgOpacity: 65,
   margin: 7, // alttan % uzaklık
+  x: 50, // yatay konum (% genişlik, ortası)
   anim: 'none', // none | karaoke (konuşulan kelime renkli) | box (kelime renkli kutuda) | single (tek kelime)
   hlColor: '#ffd60a',
 };
@@ -87,7 +89,8 @@ function activeWord(spans, f) {
 
 export function ensureCaptions(seq) {
   if (!seq.captions) seq.captions = [];
-  if (!seq.captionStyle) seq.captionStyle = { ...DEFAULT_CAPTION_STYLE };
+  // yeni sekanslar kullanıcının son seçtiği altyazı stiliyle başlar
+  if (!seq.captionStyle) seq.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(settings.captionStyleDefault || {}) };
   if (seq.captionsVisible === undefined) seq.captionsVisible = true;
   return seq.captions;
 }
@@ -120,6 +123,14 @@ export function addCaption(seq, f, text = '') {
 
 // Render için sentetik metin klibi (compositor'ın metin yolunu kullanır)
 const synthCache = new Map();
+// Altyazının sekanstaki kutusu (sürükleme ve seçim için): { x0, y0, x1, y1 }
+export function captionBox(seq, cap, f, measure) {
+  const c = captionClip(seq, cap, f);
+  const { w, h } = measure(c.text);
+  const [px, py] = c.props.position.v;
+  return { x0: px - w / 2, y0: py - h, x1: px + w / 2, y1: py };
+}
+
 export function captionClip(seq, cap, f = null) {
   const st = { ...DEFAULT_CAPTION_STYLE, ...(seq.captionStyle || {}) };
   const k = seq.height / 1080;
@@ -147,7 +158,7 @@ export function captionClip(seq, cap, f = null) {
     if (synthCache.size > 2000) synthCache.clear();
   }
   c.text = text;
-  c.props.position = { v: [seq.width / 2, seq.height * (1 - (st.margin ?? 7) / 100)] };
+  c.props.position = { v: [seq.width * (st.x ?? 50) / 100, seq.height * (1 - (st.margin ?? 7) / 100)] };
   return c;
 }
 

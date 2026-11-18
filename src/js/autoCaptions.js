@@ -8,6 +8,8 @@ import { sequenceDuration } from './model.js';
 import { exportSequence } from './exporter.js';
 import { ensureCaptions, sortCaptions, CAPTION_PRESETS, DEFAULT_CAPTION_STYLE } from './captions.js';
 import { modal, toast, selectEl } from './ui/dialogs.js';
+import { fontPicker } from './ui/fontPicker.js';
+import { settings, saveSettings } from './settings.js';
 import { MODELS, hasModel, downloadModel, transcribe, groupWords, engineAvailable } from './asr.js';
 
 export const LANGS = [['auto', 'Detect automatically'], ['tr', 'Turkish'], ['en', 'English'], ['de', 'German'], ['fr', 'French'], ['es', 'Spanish'], ['ar', 'Arabic'], ['ru', 'Russian']];
@@ -43,18 +45,29 @@ export async function autoCaptionsDialog() {
   const out = selectEl([{ value: 'same', label: t('Same as the speech') }, { value: 'en', label: t('English (translate)') }], s.asrOut || 'same');
   const words = el('input', { type: 'text', value: s.asrPrompt || '', placeholder: t('e.g. Ulaç, Kaleiçi, Antalya'), style: { width: '100%' } });
   const style = selectEl([{ value: '', label: t('Keep current style') }, ...CAPTION_PRESETS.map((p) => ({ value: p.id, label: t(p.name) }))], vertical ? 'social' : '');
+  // görünüm: hazır stilin üzerine yazı tipi, boyut ve vurgu rengi (boş bırakılırsa hazır stilinki)
+  const cur = { ...DEFAULT_CAPTION_STYLE, ...(seq.captionStyle || {}), ...(settings.captionStyleDefault || {}) };
+  let pickFont = null;
+  const fontEl = fontPicker(cur.font, (f) => { pickFont = f; }, { width: 170 });
+  const sizeEl = el('input', { type: 'number', min: 12, max: 300, placeholder: t('auto'), style: { width: '70px' } });
+  let hl = cur.hlColor || '#ffd60a';
+  const hlIn = el('input', { type: 'color', value: hl });
+  hlIn.addEventListener('input', () => { hl = hlIn.value; });
+  const SW = ['#ffd60a', '#ff9f0a', '#ff2d55', '#bf5af2', '#0a84ff', '#34c759', '#ffffff'];
+  const sw = el('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } }, ...SW.map((c) => { const b = el('button', { title: c, style: { width: '18px', height: '18px', padding: 0, background: c, border: '1px solid #555', borderRadius: '3px' } }); b.addEventListener('click', () => { hl = c; hlIn.value = c; }); return b; }), hlIn);
+  const lookRow = el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, fontEl, el('span', { text: t('Size'), class: 'muted' }), sizeEl);
   const hasIO = seq.inFrame != null || seq.outFrame != null;
   const range = selectEl([{ value: 'all', label: t('Entire Sequence') }, ...(hasIO ? [{ value: 'io', label: t('Sequence In/Out') }] : [])], hasIO ? 'io' : 'all');
   const existing = (seq.captions || []).length;
   const mode = selectEl([{ value: 'replace', label: t('Replace captions in this range') }, { value: 'add', label: t('Keep them and add new ones') }], 'replace');
   const row = (label, c) => el('div', { style: { display: 'grid', gridTemplateColumns: '130px 1fr', alignItems: 'center', gap: '8px', margin: '7px 0' } }, el('span', { text: label }), c);
   const body = el('div', {},
-    row(t('Language'), lang), row(t('Caption Language'), out), row(t('Quality'), modelBox), row(t('Custom Words'), words), row(t('Style'), style), row(t('Line Length'), lineLen), row(t('Range'), range),
+    row(t('Language'), lang), row(t('Caption Language'), out), row(t('Quality'), modelBox), row(t('Custom Words'), words), row(t('Style'), style), row(t('Font'), lookRow), row(t('Word Highlight Color'), sw), row(t('Line Length'), lineLen), row(t('Range'), range),
     ...(existing ? [row(t('Existing Captions'), mode)] : []),
     el('div', { text: t('Speech is recognized on this computer; nothing is uploaded.'), style: { color: 'var(--text-dim)', fontSize: '11px', marginTop: '8px' } }));
   const r = await modal({ title: t('Auto Captions'), body, width: 560, buttons: [
     { label: t('Cancel'), value: null },
-    { label: t('Create Captions'), primary: true, onClick: () => ({ lang: lang.value, translate: out.value === 'en', model, prompt: words.value, style: style.value, lineLen: lineLen.value, range: range.value, mode: existing ? mode.value : 'add' }) },
+    { label: t('Create Captions'), primary: true, onClick: () => ({ lang: lang.value, translate: out.value === 'en', model, prompt: words.value, style: style.value, look: { font: pickFont, size: sizeEl.value ? +sizeEl.value : null, hlColor: hl }, lineLen: lineLen.value, range: range.value, mode: existing ? mode.value : 'add' }) },
   ] });
   if (!r) return null;
   store.settings.asrLang = r.lang; store.settings.asrModel = r.model; store.settings.asrPrompt = r.prompt; store.settings.asrOut = r.translate ? 'en' : 'same';
@@ -64,7 +77,7 @@ export async function autoCaptionsDialog() {
 }
 
 // İlerleme penceresiyle çalıştır (testler doğrudan da çağırabilir)
-export async function runAutoCaptions(seq, { lang = 'auto', model = 'fast', prompt = '', translate = false, style = '', lineLen = 'normal', f0, f1, mode = 'add', silent = false } = {}) {
+export async function runAutoCaptions(seq, { lang = 'auto', model = 'fast', prompt = '', translate = false, style = '', look = null, lineLen = 'normal', f0, f1, mode = 'add', silent = false } = {}) {
   const ctrl = new AbortController();
   const bar = el('div', { class: 'progress' }, el('div'));
   const info = el('div', { class: 'muted', style: { marginTop: '6px' } });
@@ -117,8 +130,17 @@ export async function runAutoCaptions(seq, { lang = 'auto', model = 'fast', prom
       sq.captionsVisible = true;
       const pr = CAPTION_PRESETS.find((x) => x.id === style);
       if (pr) sq.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(sq.captionStyle || {}), ...pr.st };
+      if (look) {
+        const o = {};
+        if (look.font) o.font = look.font;
+        if (look.size) o.size = look.size;
+        if (look.hlColor) o.hlColor = look.hlColor;
+        sq.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(sq.captionStyle || {}), ...o };
+      }
       added = caps.length;
     });
+    // seçilen görünüm sonraki projelerde de kullanılsın
+    if (style || look) { settings.captionStyleDefault = { ...(store.project.sequences[seq.id]?.captionStyle || {}) }; saveSettings(); }
     const secs = (performance.now() - t0) / 1000;
     if (!silent) {
       toast(added ? t('{n} captions created', { n: added }) + ' · ' + secs.toFixed(0) + ' s' : t('No speech was found'), added ? 'success' : 'warn', 5000);

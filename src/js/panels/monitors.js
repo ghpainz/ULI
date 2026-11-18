@@ -11,6 +11,8 @@ import { playbackUrl, rt, mediaEvents, mediaStatus, createProxy } from '../media
 import { videoLayersAt, itemsOfLayers } from '../renderGraph.js';
 import { switchAngle } from '../multicam.js';
 import { layerBounds, alignLayer } from '../graphics.js';
+import { captionAt, captionBox, DEFAULT_CAPTION_STYLE } from '../captions.js';
+import { renderTextCanvas } from '../text.js';
 import * as E from '../editing.js';
 import { settings, saveSettings } from '../settings.js';
 import { contextMenu, toast } from '../ui/dialogs.js';
@@ -394,6 +396,7 @@ export class ProgramMonitor {
     if (store.ui.tool === 'type') { this.addText(sp); store.setTool('select'); return; }
     if (app.engine.playing) return;
     if (this._maskDown(e, vx, vy)) return;
+    if (this._captionDown(e, sp, r)) return;
     let c = this._selectedVideoClip();
     const corner = e.target.dataset && e.target.dataset.corner != null ? +e.target.dataset.corner : null;
     // seçili değilse tıklanan noktadaki en üst klibi seç
@@ -549,6 +552,63 @@ export class ProgramMonitor {
     window.addEventListener('mousemove', mv);
     window.addEventListener('mouseup', up);
     return true;
+  }
+
+  // Altyazıyı Program monitöründe sürükle: konum sekansın tüm altyazılarına uygulanır (yatay % ve alttan %)
+  _captionDown(e, sp, r) {
+    const s = store.seq;
+    if (!s || s.captionsVisible === false) return false;
+    const f = app.engine.currentFrame;
+    const cap = captionAt(s, f);
+    if (!cap || !cap.text) return false;
+    const measure = (txt) => { const cv = renderTextCanvas(txt); return { w: cv.width, h: cv.height }; };
+    const box0 = captionBox(s, cap, f, measure);
+    const pad = (8 * s.width) / (app.engine.displayRect?.w || s.width);
+    if (sp[0] < box0.x0 - pad || sp[0] > box0.x1 + pad || sp[1] < box0.y0 - pad || sp[1] > box0.y1 + pad) return false;
+    e.preventDefault();
+    const cx0 = (box0.x0 + box0.x1) / 2, by0 = box0.y1;
+    let begun = false;
+    this._openCaptionStyle(cap.id);
+    const mv = (ev) => {
+      const p = app.engine.viewToSeq(ev.clientX - r.left, ev.clientY - r.top);
+      if (!p) return;
+      let dx = p[0] - sp[0], dy = p[1] - sp[1];
+      if (ev.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      const sn = ev.ctrlKey ? null : this._snap(box0, dx, dy, [0, 0, s.width, s.height]);
+      if (sn) { dx += sn.dx; dy += sn.dy; }
+      if (!begun) { store.begin('Move Captions'); begun = true; }
+      const x = clamp(((cx0 + dx) / s.width) * 100, 0, 100);
+      const margin = clamp((1 - (by0 + dy) / s.height) * 100, 0, 95);
+      store.live((pr) => {
+        const q = pr.sequences[pr.activeSequenceId];
+        q.captionStyle = { ...DEFAULT_CAPTION_STYLE, ...(q.captionStyle || {}), x: Math.round(x * 10) / 10, margin: Math.round(margin * 10) / 10 };
+      });
+      this._drawGuides(sn, (gx, gy) => [gx, gy]);
+      app.engine.requestRender();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up);
+      this._drawGuides(null);
+      if (begun) {
+        store.end();
+        settings.captionStyleDefault = { ...(store.seq.captionStyle || {}) };
+        saveSettings();
+      }
+      app.captionsPanel?.render?.();
+    };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+    return true;
+  }
+
+  // Altyazıya tıklanınca Altyazılar panelini stil ayarları açık olarak göster
+  _openCaptionStyle(capId) {
+    try {
+      app.commands.showPanel('captions');
+      const P = app.captionsPanel;
+      if (P) { P.showStyle = true; P.focusCaption = capId; P.render(); }
+    } catch (e) { /* */ }
   }
 
   // Klibi kareye hizala (Efekt Kontrolleri'ndeki hizalama düğmeleri)
