@@ -274,6 +274,17 @@ function runTestScript() {
   });
 }
 
+// Güncelleme: indirilen kurulum dosyasını başlat ve uygulamayı kapat (yalnız geçici güncelleme klasöründeki .exe)
+ipcMain.handle('app:run-installer', (e, file) => {
+  const dir = path.join(require('os').tmpdir(), 'uli-update');
+  const p = path.resolve(String(file || ''));
+  if (!p.startsWith(dir + path.sep) || !/\.exe$/i.test(p) || !fs.existsSync(p)) return false;
+  require('child_process').spawn(p, [], { detached: true, stdio: 'ignore' }).unref();
+  forceClose = true;
+  setTimeout(() => app.quit(), 300);
+  return true;
+});
+
 ipcMain.handle('app:confirm-close', () => {
   forceClose = true;
   if (mainWindow) mainWindow.close();

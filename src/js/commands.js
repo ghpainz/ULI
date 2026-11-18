@@ -462,6 +462,7 @@ async function preferencesDialog() {
   const heavy = el('input', { type: 'checkbox' }); heavy.checked = settings.autoProxyHeavy;
   const ph = selectEl([{ value: 540, label: '540p' }, { value: 720, label: '720p' }, { value: 1080, label: '1080p' }], settings.proxyHeight);
   const thumbs = el('input', { type: 'checkbox' }); thumbs.checked = settings.timelineThumbs;
+  const upd = el('input', { type: 'checkbox' }); upd.checked = settings.autoUpdateCheck !== false;
   const dvt = selectEl(Object.entries(TRANSITIONS).filter(([, d]) => d.category === 'video').map(([k, d]) => ({ value: k, label: t(d.name) })), settings.defaultVideoTransition);
   const dat = selectEl(Object.entries(TRANSITIONS).filter(([, d]) => d.category === 'audio').map(([k, d]) => ({ value: k, label: t(d.name) })), settings.defaultAudioTransition);
   const grid = el('div', { class: 'form-grid' },
@@ -470,6 +471,7 @@ async function preferencesDialog() {
     el('label', { text: t('Still image default duration (s)') }), still,
     el('label', { text: t('Scale media to frame size') }), scale,
     el('label', { text: t('Show thumbnails in timeline') }), thumbs,
+    el('label', { text: t('Check for updates automatically') }), upd,
     el('div', { class: 'form-section', text: t('Transitions') }),
     el('label', { text: t('Default video transition') }), dvt,
     el('label', { text: t('Video transition duration (frames)') }), vtr,
@@ -488,7 +490,7 @@ async function preferencesDialog() {
     autosaveMinutes: +auto.value, autosaveKeep: +keep.value, stillDuration: +still.value,
     videoTransitionFrames: +vtr.value, audioTransitionFrames: +atr.value, scaleToFrame: scale.checked,
     autoProxyHeavy: heavy.checked, proxyHeight: +ph.value, timelineThumbs: thumbs.checked,
-    defaultVideoTransition: dvt.value, defaultAudioTransition: dat.value,
+    defaultVideoTransition: dvt.value, defaultAudioTransition: dat.value, autoUpdateCheck: upd.checked,
   });
   saveSettings();
   IO.scheduleAutosave();
@@ -1208,6 +1210,7 @@ export function initCommands() {
   // Yardım
   def('help.shortcuts', 'Keyboard Shortcuts', () => shortcutsDialog(), { shortcut: 'F1' });
   def('help.about', 'About ULI', () => aboutDialog());
+  def('help.checkUpdates', 'Check for Updates...', async () => (await import('./updater.js')).checkForUpdatesCommand({ manual: true }));
 
   applyShortcutOverrides();
   app.commandsReady = true;
@@ -1279,7 +1282,7 @@ export function menuStructure() {
       item('window.maximizeFrame'), item('window.resetLayout'), item('window.fullscreen'), '-',
       item('window.toggleLang'), item('window.reload'), item('window.devtools'),
     ] },
-    { label: t('Help'), items: () => [item('help.shortcuts'), item('help.about')] },
+    { label: t('Help'), items: () => [item('help.shortcuts'), item('help.checkUpdates'), '-', item('help.about')] },
   ];
 }
 
