@@ -636,6 +636,15 @@ export const AUDIO_EFFECTS = {
       { key: 'harmonics', label: 'Harmonics', min: 1, max: 6, step: 1, default: 3, animatable: false },
     ],
   },
+  voiceEnhance: {
+    name: 'Voice Enhance', group: 'Noise Reduction / Restoration', category: 'audio', offline: true,
+    params: [
+      { key: 'veStrength', label: 'Noise Removal', type: 'select', options: ['Normal', 'Strong'], default: 0, animatable: false },
+      { key: 'veMix', label: 'Amount', min: 0, max: 100, step: 1, default: 100, animatable: false, suffix: ' %' },
+      { key: 'veClarity', label: 'Clarity (presence boost)', type: 'bool', default: true, animatable: false },
+      { key: 'veLevel', label: 'Even Out Volume', type: 'bool', default: false, animatable: false },
+    ],
+  },
   denoise: {
     name: 'DeNoise', group: 'Noise Reduction / Restoration', category: 'audio', offline: true,
     params: [
@@ -718,6 +727,12 @@ function voiceFilters(preset, semis, keepFormant) {
   }
 }
 
+// Konuşmayı netleştir: RNNoise sinir ağı modeli (FFmpeg arnndn). Yol uygulama açılırken verilir.
+let rnnoiseModel = null;
+export function setRnnoiseModel(p) { rnnoiseModel = p || null; }
+// FFmpeg filtre seçeneği için yol: tırnak içinde, ':' kaçışlı, ileri eğik çizgi
+const ffPathOpt = (p) => "'" + p.replace(/\\/g, '/').replace(/'/g, '').replace(/:/g, '\\:') + "'";
+
 export function audioFxFilters(effects, stage) {
   const out = [];
   for (const fx of effects || []) {
@@ -751,6 +766,18 @@ export function audioFxFilters(effects, stage) {
       case 'dehum':
         for (const f of humFreqs(fx)) out.push(`bandreject=f=${f}:t=q:w=30`);
         break;
+      case 'voiceEnhance': {
+        out.push('highpass=f=90:p=2');
+        if (rnnoiseModel) {
+          const mix = Math.max(0, Math.min(1, v('veMix') / 100)).toFixed(2);
+          const nn = `arnndn=m=${ffPathOpt(rnnoiseModel)}:mix=${mix}`;
+          out.push(nn);
+          if (v('veStrength') >= 1) out.push(nn);
+        } else out.push('afftdn=nr=20:nf=-35');
+        if (fx.params.veClarity ? !!fx.params.veClarity.v : true) out.push('equalizer=f=3500:t=q:w=1.2:g=3', 'equalizer=f=250:t=q:w=1:g=-2');
+        if (fx.params.veLevel && fx.params.veLevel.v) out.push('dynaudnorm=f=250:g=15:p=0.9:m=8');
+        break;
+      }
       case 'denoise':
         {
           // otomatik: klibin en sessiz bölümlerinden ölçülen taban (audioTools.ensureNoiseFloor)

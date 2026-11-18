@@ -44,6 +44,12 @@ keeps its own license; ULI runs FFmpeg and FFprobe as separate programs
   segmentation) and `blaze_face_full_range.tflite` (face detection), Apache License 2.0
 - Runs entirely on the computer; images are never uploaded.
 
+## RNNoise speech model (Voice Enhance)
+
+- `lq.rnnn` ("leavened-quisling") from https://github.com/GregorR/rnnoise-models, used with FFmpeg's `arnndn` filter
+- The model author states that the trained models are not creative work and therefore not subject to copyright.
+- Installed under `resources/rnnoise`.
+
 ## Electron
 
 - Version: 38, https://www.electronjs.org/

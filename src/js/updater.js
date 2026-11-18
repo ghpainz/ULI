@@ -35,7 +35,23 @@ export function pickUpdate(release, current) {
   };
 }
 
-export async function checkForUpdate({ fetchImpl = fetch } = {}) {
+// Sayfanın güvenlik politikası (CSP) dış bağlantıya izin vermez; GitHub'a Node'un https modülüyle bağlanılır
+function nodeFetch(url, opts = {}) {
+  const https = window.require('https');
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'ULI-updater', ...(opts.headers || {}) } }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { body += d; if (body.length > 2e6) req.destroy(); });
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(body) }));
+      res.on('error', reject);
+    });
+    req.setTimeout(15000, () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
+export async function checkForUpdate({ fetchImpl = nodeFetch } = {}) {
   const r = await fetchImpl(API, { headers: { Accept: 'application/vnd.github+json' } });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return pickUpdate(await r.json(), app.paths.appVersion);

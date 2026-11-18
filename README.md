@@ -47,6 +47,8 @@ desktop shortcuts and opens `.ulip` project files on double-click. FFmpeg is inc
 - Background Removal effect: transparent (put any video/photo below), blurred or solid-color background
 - Auto Reframe: makes a 9:16 / 1:1 / 4:5 copy of a sequence where the frame follows the person's face
 - Remove Silences: finds pauses in talking clips and cuts them out (jump cut), without touching music on other tracks
+- Voice Enhance: neural-network noise removal for speech (wind, hum, room noise), with clarity and level options
+- Auto Captions can translate speech into English captions
 
 **Audio**
 - Track mixer, Essential Sound (loudness matching, repair, ducking), audio effects, voice changer
@@ -59,6 +61,8 @@ desktop shortcuts and opens `.ulip` project files on double-click. FFmpeg is inc
 - Export queue and preview rendering
 
 ![Effects](docs/screenshots/effects.png)
+
+ULI checks GitHub for new versions once a day (Help > Check for Updates) and can download and install them for you.
 
 ## Build from source
 
@@ -76,7 +80,7 @@ settings or recent projects. Test videos are generated with FFmpeg into `tests/.
 
 ## Roadmap
 
-- Code-signed installer and automatic updates
+- Code-signed installer
 - macOS and Linux builds
 - Plugin / extension support
 

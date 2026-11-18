@@ -1,12 +1,12 @@
 {
   "name": "uli",
   "productName": "ULI",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "ULI — Premiere Pro sadeliğinde, CapCut zenginliğinde video kurgu uygulaması",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "predist": "node tools/fetch-whisper.js && node tools/fetch-mediapipe-models.js",
+    "predist": "node tools/fetch-whisper.js && node tools/fetch-mediapipe-models.js && node tools/fetch-rnnoise.js",
     "dist": "electron-builder --win nsis --x64",
     "fetch-whisper": "node tools/fetch-whisper.js",
     "test": "node tests/run.js"
@@ -60,6 +60,10 @@
       {
         "from": "vendor/mediapipe-models",
         "to": "mediapipe-models"
+      },
+      {
+        "from": "vendor/rnnoise",
+        "to": "rnnoise"
       }
     ],
     "asarUnpack": [

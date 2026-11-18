@@ -41,3 +41,7 @@ await pr;
 ipc.invoke = realInvoke;
 check('after download the installer is started', ran && fs.existsSync(ran) && /uli-update/.test(ran), ran);
 srv.close();
+// gerçek GitHub bağlantısı (CSP engeline takılmadan): ağ yoksa atlanır
+let live = null, liveErr = null;
+try { live = await Up.checkForUpdate(); } catch (e) { liveErr = e.message; }
+check('real GitHub check runs (or no network)', !liveErr || /ENOTFOUND|EAI_AGAIN|timeout|ECONN/i.test(liveErr), liveErr || (live ? 'update ' + live.version : 'up to date'));

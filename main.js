@@ -205,8 +205,11 @@ ipcMain.handle('app:paths', () => {
   // konuşmayı yazıya çevirme motoru (otomatik altyazı): kurulumda resources/whisper, geliştirmede vendor/whisper
   const wDir = app.isPackaged ? path.join(process.resourcesPath, 'whisper') : path.join(__dirname, 'vendor', 'whisper');
   const whisper = fs.existsSync(path.join(wDir, 'whisper-cli.exe')) ? path.join(wDir, 'whisper-cli.exe') : null;
+  const rnDir = app.isPackaged ? path.join(process.resourcesPath, 'rnnoise') : path.join(__dirname, 'vendor', 'rnnoise');
+  const rnnoise = fs.existsSync(path.join(rnDir, 'lq.rnnn')) ? path.join(rnDir, 'lq.rnnn') : null;
   return {
     whisper,
+    rnnoise,
     ffmpeg,
     ffprobe,
     userData,

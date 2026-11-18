@@ -86,6 +86,9 @@ ULI'nin kaynak kodu [MIT lisansı](LICENSE) ile dağıtılır. Kurulum dosyası 
 - Arka Plan Silme efekti: şeffaf (alttaki ize istediğiniz videoyu/fotoğrafı koyun), bulanık veya düz renk arka plan
 - Otomatik Dikey Çevir (Sekans menüsü): sekansın 9:16 / 1:1 / 4:5 kopyasını oluşturur, kadraj kişinin yüzünü takip eder
 - Sessizlikleri Kaldır (Klip menüsü / sağ tık): konuşma kliplerindeki duraklamaları bulup keser (jump cut), diğer izlerdeki müziğe dokunmaz
+- Konuşmayı Netleştir (ses efekti): yapay zekâ ile rüzgâr, uğultu ve ortam gürültüsünü temizler; netlik ve ses seviyesi seçenekleri
+- Otomatik altyazı konuşmayı İngilizce altyazıya çevirebilir
+- Otomatik güncelleme: ULI günde bir kez GitHub'da yeni sürümü denetler (Yardım > Güncellemeleri Denetle) ve tek tıkla kurar
 - Otomatik altyazıda Özel Kelimeler (isimlerin doğru yazılması için); bir kelimeyi düzeltince kelime vurgusu çalışmaya devam eder
 
 **Ses**

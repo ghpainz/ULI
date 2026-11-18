@@ -236,6 +236,7 @@ async function boot() {
     alertDialog(t('FFmpeg could not be found. Please reinstall the application (npm install).'));
   }
   await initFF(paths);
+  (await import('./effectsDef.js')).setRnnoiseModel(paths.rnnoise);
   app.ffInfo = { nvenc: ff.nvenc };
   IO.initProjectIO(paths);
   initCommands();
