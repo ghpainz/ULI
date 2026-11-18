@@ -62,7 +62,7 @@ desktop shortcuts and opens `.ulip` project files on double-click. FFmpeg is inc
 
 ![Effects](docs/screenshots/effects.png)
 
-ULI checks GitHub for new versions once a day (Help > Check for Updates) and can download and install them for you.
+ULI checks GitHub for new versions every time it starts (Help > Check for Updates) and can download and install them for you.
 
 ## Build from source
 

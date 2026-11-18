@@ -331,7 +331,7 @@ async function boot() {
   const argProj = (paths.argv || []).find((a) => a.toLowerCase().endsWith('.' + IO.PROJECT_EXT));
   if (argProj) await IO.openProject(argProj);
   else await showWelcome();
-  // güncelleme denetimi (günde en fazla bir kez, sessiz; yeni sürüm varsa sorar)
+  // güncelleme denetimi (her açılışta, sessiz; yeni sürüm varsa sorar)
   setTimeout(() => import('./updater.js').then((m) => m.checkForUpdatesCommand()).catch(() => {}), 8000);
 }
 

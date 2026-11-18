@@ -138,11 +138,10 @@ export async function updateDialog(info) {
   return file;
 }
 
-// Açılışta (günde en fazla bir kez) sessizce denetle; elle denetlemede sonucu her zaman söyle
+// Her açılışta sessizce denetle (yeni sürüm yoksa hiçbir şey göstermez); elle denetlemede sonucu her zaman söyle
 export async function checkForUpdatesCommand({ manual = false } = {}) {
   if (!manual) {
     if (settings.autoUpdateCheck === false || app.paths.testMode) return null;
-    if (Date.now() - (settings.lastUpdateCheck || 0) < 20 * 3600 * 1000) return null;
   }
   let info = null;
   try {
