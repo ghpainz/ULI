@@ -81,7 +81,7 @@ export function downloadModel(id, { onProgress, signal } = {}) {
 // ---- Yazıya çevirme ----
 // wavFile: 16 kHz mono WAV. lang: 'auto' | 'tr' | 'en' ...
 // Döner: { language, words: [{ text, t0, t1, p }] } (saniye)
-export function transcribe(wavFile, { model = 'fast', lang = 'auto', prompt = '', onProgress, signal } = {}) {
+export function transcribe(wavFile, { model = 'fast', lang = 'auto', prompt = '', translate = false, onProgress, signal } = {}) {
   if (!engineAvailable()) return Promise.reject(new Error(t('Speech recognition engine is missing. Please reinstall ULI.')));
   if (!hasModel(model)) return Promise.reject(new Error(t('Speech model is not downloaded')));
   // Türkçe karakterli klasör adlarında sorun olmasın diye: çalışma klasörü userData, yollar göreli
@@ -93,6 +93,8 @@ export function transcribe(wavFile, { model = 'fast', lang = 'auto', prompt = ''
   const args = ['-m', rel(modelPath(model)), '-f', rel(wavFile), '-l', lang, '-t', String(threads), '-ojf', '-of', rel(outBase), '-pp', '-sns', '-dtw', modelById(model).dtw, '-nfa'];
   // özel kelimeler (isimler vb.): modele ipucu olarak verilir, doğru yazılma olasılığı artar
   if (prompt && prompt.trim()) args.push('--prompt', prompt.trim().slice(0, 400));
+  // konuşma hangi dilde olursa olsun altyazıyı İngilizceye çevir
+  if (translate) args.push('-tr');
   return new Promise((resolve, reject) => {
     const p = childProcess.spawn(app.paths.whisper, args, { cwd, windowsHide: true });
     let err = '';

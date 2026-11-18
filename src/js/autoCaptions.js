@@ -40,6 +40,7 @@ export async function autoCaptionsDialog() {
   drawModels();
   const vertical = seq.width < seq.height;
   const lineLen = selectEl([{ value: 'short', label: t('Short lines (social media)') }, { value: 'normal', label: t('Normal lines') }], vertical ? 'short' : 'normal');
+  const out = selectEl([{ value: 'same', label: t('Same as the speech') }, { value: 'en', label: t('English (translate)') }], s.asrOut || 'same');
   const words = el('input', { type: 'text', value: s.asrPrompt || '', placeholder: t('e.g. Ulaç, Kaleiçi, Antalya'), style: { width: '100%' } });
   const style = selectEl([{ value: '', label: t('Keep current style') }, ...CAPTION_PRESETS.map((p) => ({ value: p.id, label: t(p.name) }))], vertical ? 'social' : '');
   const hasIO = seq.inFrame != null || seq.outFrame != null;
@@ -48,22 +49,22 @@ export async function autoCaptionsDialog() {
   const mode = selectEl([{ value: 'replace', label: t('Replace captions in this range') }, { value: 'add', label: t('Keep them and add new ones') }], 'replace');
   const row = (label, c) => el('div', { style: { display: 'grid', gridTemplateColumns: '130px 1fr', alignItems: 'center', gap: '8px', margin: '7px 0' } }, el('span', { text: label }), c);
   const body = el('div', {},
-    row(t('Language'), lang), row(t('Quality'), modelBox), row(t('Custom Words'), words), row(t('Style'), style), row(t('Line Length'), lineLen), row(t('Range'), range),
+    row(t('Language'), lang), row(t('Caption Language'), out), row(t('Quality'), modelBox), row(t('Custom Words'), words), row(t('Style'), style), row(t('Line Length'), lineLen), row(t('Range'), range),
     ...(existing ? [row(t('Existing Captions'), mode)] : []),
     el('div', { text: t('Speech is recognized on this computer; nothing is uploaded.'), style: { color: 'var(--text-dim)', fontSize: '11px', marginTop: '8px' } }));
   const r = await modal({ title: t('Auto Captions'), body, width: 560, buttons: [
     { label: t('Cancel'), value: null },
-    { label: t('Create Captions'), primary: true, onClick: () => ({ lang: lang.value, model, prompt: words.value, style: style.value, lineLen: lineLen.value, range: range.value, mode: existing ? mode.value : 'add' }) },
+    { label: t('Create Captions'), primary: true, onClick: () => ({ lang: lang.value, translate: out.value === 'en', model, prompt: words.value, style: style.value, lineLen: lineLen.value, range: range.value, mode: existing ? mode.value : 'add' }) },
   ] });
   if (!r) return null;
-  store.settings.asrLang = r.lang; store.settings.asrModel = r.model; store.settings.asrPrompt = r.prompt;
+  store.settings.asrLang = r.lang; store.settings.asrModel = r.model; store.settings.asrPrompt = r.prompt; store.settings.asrOut = r.translate ? 'en' : 'same';
   const dur = sequenceDuration(seq);
   const [f0, f1] = r.range === 'io' ? [seq.inFrame ?? 0, seq.outFrame ?? dur] : [0, dur];
   return runAutoCaptions(seq, { ...r, f0, f1 });
 }
 
 // İlerleme penceresiyle çalıştır (testler doğrudan da çağırabilir)
-export async function runAutoCaptions(seq, { lang = 'auto', model = 'fast', prompt = '', style = '', lineLen = 'normal', f0, f1, mode = 'add', silent = false } = {}) {
+export async function runAutoCaptions(seq, { lang = 'auto', model = 'fast', prompt = '', translate = false, style = '', lineLen = 'normal', f0, f1, mode = 'add', silent = false } = {}) {
   const ctrl = new AbortController();
   const bar = el('div', { class: 'progress' }, el('div'));
   const info = el('div', { class: 'muted', style: { marginTop: '6px' } });
@@ -88,7 +89,7 @@ export async function runAutoCaptions(seq, { lang = 'auto', model = 'fast', prom
       p.on('error', rej);
     });
     set(t('Recognizing speech'), 0);
-    const res = await transcribe(wav, { model, lang, prompt, signal: ctrl.signal, onProgress: (p) => set(t('Recognizing speech'), p) });
+    const res = await transcribe(wav, { model, lang, prompt, translate, signal: ctrl.signal, onProgress: (p) => set(t('Recognizing speech'), p) });
     const vertical = seq.width < seq.height;
     const lines = groupWords(res.words, lineLen === 'short' ? { maxChars: vertical ? 20 : 26, maxDur: 2.5 } : { maxChars: 42, maxDur: 4.5 });
     const fps = seq.fps;

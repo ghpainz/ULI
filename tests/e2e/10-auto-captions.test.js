@@ -53,4 +53,10 @@ if (!A.hasModel('fast')) {
   // tek geri al
   U.store.undo();
   check('one undo removes the auto captions', !(S().captions || []).length);
+  // İngilizceye çeviri: Türkçe konuşmadan İngilizce altyazı
+  const rt = await AC.runAutoCaptions(seq, { lang: 'tr', translate: true, model: 'fast', lineLen: 'normal', f0: 0, f1: offset + Math.round((sp.duration || 20) * seq.fps), silent: true });
+  const en = (S().captions || []).map((c) => c.text).join(' ');
+  check('translate to English: captions are in English', rt && /\b(today|friends|sea|fish)\b/i.test(en) && !/[çğışüÇĞİŞÜ]/.test(en), en);
+  check('translated captions are timed to speech', S().captions[0] && Math.abs(S().captions[0].start - offset) <= seq.fps * 0.6, S().captions[0]?.start);
+  U.store.undo();
 }
